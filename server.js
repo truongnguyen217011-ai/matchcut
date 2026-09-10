@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { pipeline } from '@huggingface/transformers';
 import wavefile from 'wavefile';
 const root=path.dirname(fileURLToPath(import.meta.url)),jobsRoot=path.join(root,'jobs');await mkdir(jobsRoot,{recursive:true});
-const app=express(),upload=multer({dest:jobsRoot,limits:{fileSize:1024*1024*1024,files:101}});app.use(express.static(path.join(root,'dist')));
+const app=express(),upload=multer({dest:jobsRoot,limits:{fileSize:1024*1024*1024,files:101}});app.use(express.static(path.join(root,'dist'),{etag:false,lastModified:false,setHeaders(res){res.setHeader('Cache-Control','no-store, no-cache, must-revalidate')}}));
 let whisperPromise;
 function getWhisper(){whisperPromise??=pipeline('automatic-speech-recognition','onnx-community/whisper-tiny',{dtype:'q8'});return whisperPromise}
 function run(args){return new Promise((resolve,reject)=>{const child=spawn(ffmpegPath,args,{windowsHide:true});let error='';child.stderr.on('data',c=>{error+=c.toString();if(error.length>12000)error=error.slice(-12000)});child.on('error',reject);child.on('close',code=>code===0?resolve():reject(new Error(error||`FFmpeg exited ${code}`)))})}
