@@ -104,6 +104,7 @@ voice.onchange = () => {
   $("#whisperBtn").disabled = false;
   whisperChunks = [];
   ready();
+  updateBatchButtons();
 };
 script.oninput = () => {
   ready();
@@ -405,3 +406,36 @@ async function renderVideo() {
   }
 }
 $("#exportBtn").onclick = renderVideo;
+
+let batchFiles = [], batchRunning = false, batchStopRequested = false;
+const batchLog = (message) => { const box = $("#batchLog"); box.textContent += `\n[${new Date().toLocaleTimeString("vi-VN")}] ${message}`; box.scrollTop = box.scrollHeight; };
+function renderBatchList() {
+  const list = $("#batchList");
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><span>${item.file.name}</span><em>${item.status}</em></label>`).join("") : '<div class="batch-empty">Chưa có file âm thanh trong hàng đợi.</div>';
+  list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
+  updateBatchButtons();
+}
+function updateBatchButtons() { const count = batchFiles.filter((item) => item.selected).length; $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất").length}/${count}`; $("#runSingle").disabled = batchRunning || !count || !assets.length; $("#runBatch").disabled = batchRunning || !count || !assets.length; $("#stopBatch").disabled = !batchRunning; }
+$("#batchInput").onchange = (event) => { for (const file of event.target.files) batchFiles.push({ file, selected: true, status: "Chờ chạy" }); event.target.value = ""; renderBatchList(); batchLog(`Đã thêm ${batchFiles.length} file vào hàng đợi.`); };
+$("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
+$("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
+$("#clearBatch").onclick = () => { if (batchRunning) return; batchFiles = []; renderBatchList(); batchLog("Đã làm trống hàng đợi."); };
+$("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu cầu dừng. File hiện tại sẽ hoàn tất rồi hàng đợi dừng lại."); };
+async function processBatchItem(item) {
+  item.status = "Tạo timestamp"; renderBatchList(); batchLog(`Đang nhận dạng: ${item.file.name}`);
+  const transcribeForm = new FormData(); transcribeForm.append("voice", item.file);
+  const transcribeResponse = await fetch("/api/transcribe", { method: "POST", body: transcribeForm });
+  const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Whisper thất bại");
+  const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice");
+  item.status = "Đang render"; renderBatchList(); batchLog(`Đang render ${chunks.length} cảnh: ${item.file.name}`);
+  const renderForm = new FormData(); renderForm.append("voice", item.file); assets.forEach((asset) => renderForm.append("media", asset.file));
+  for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) renderForm.append(field,file); }
+  renderForm.append("scenes", JSON.stringify(chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, mediaIndex:index % assets.length, mediaType:assets[index % assets.length].type }))));
+  renderForm.append("settings", JSON.stringify(effectSettings()));
+  const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
+  item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName} → ${result.savedPath}`);
+}
+async function runBatch(items) { if (batchRunning) return; if (!assets.length) { batchLog("Thiếu kho tư liệu. Hãy thêm ảnh/video trước khi chạy."); return; } batchRunning = true; batchStopRequested = false; updateBatchButtons(); for (const item of items) { if (batchStopRequested) break; try { await processBatchItem(item); } catch (error) { item.status = "Lỗi"; renderBatchList(); batchLog(`✕ ${item.file.name}: ${error.message}`); } } batchRunning = false; updateBatchButtons(); batchLog(batchStopRequested ? "Đã dừng hàng đợi." : "Đã xử lý xong hàng đợi."); }
+$("#runSingle").onclick = () => { const item = batchFiles.find((entry) => entry.selected); if (item) void runBatch([item]); };
+$("#runBatch").onclick = () => void runBatch(batchFiles.filter((item) => item.selected));
+renderBatchList();

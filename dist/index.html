@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut</strong><span>Ghép video khớp lời · v2.2</span></div></div><div class="status"><i></i>Xử lý trên thiết bị</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut</strong><span>Ghép video khớp lời · v2.3</span></div></div><div class="status"><i></i>Xử lý trên thiết bị</div></header>
   <main>
     <section class="setup panel">
       <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
@@ -75,6 +75,13 @@
       <div id="timeline" class="timeline"><div class="timeline-empty">Chưa có cảnh để hiển thị.</div></div>
     </section>
   </main>
+  <section class="batch-panel panel">
+    <div class="batch-head"><div><strong>Chạy file âm thanh (MP3/WAV/M4A)</strong><span>Dùng cấu hình kênh và kho tư liệu hiện tại</span></div><button id="clearBatch">Xóa hết</button></div>
+    <div class="batch-layout">
+      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chưa có file âm thanh trong hàng đợi.</div></div><div class="batch-actions"><label><input id="batchInput" type="file" accept="audio/*" multiple>＋ Thêm file</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
+      <div class="batch-progress"><div class="progress-title">Tiến trình <span id="batchCounter">0/0</span></div><pre id="batchLog">Sẵn sàng. Hãy thêm các file voice cần xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
+    </div>
+  </section>
   <script src="./app.js"></script>
 </body>
 </html>
