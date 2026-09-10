@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MatchCut — Ghép video khớp lời</title>
+  <meta name="description" content="Công cụ ghép ảnh và video khớp lời thuyết minh trên timeline." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut</strong><span>Ghép video khớp lời</span></div></div><div class="status"><i></i>Xử lý trên thiết bị</div></header>
+  <main>
+    <section class="setup panel">
+      <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
+      <label class="drop" id="voiceDrop"><input id="voiceInput" type="file" accept="audio/*"><b>♫</b><strong id="voiceLabel">Chọn file voice</strong><small>Âm thanh không được tải lên máy chủ</small></label>
+      <audio id="audio"></audio>
+      <div class="title"><span>02</span><div><h2>Lời thoại</h2><p>Mỗi câu sẽ thành một cảnh</p></div></div>
+      <textarea id="script" rows="8" placeholder="Dán toàn bộ lời thuyết minh vào đây…"></textarea>
+      <div class="title"><span>03</span><div><h2>Kho tư liệu</h2><p>Chọn nhiều ảnh hoặc video</p></div></div>
+      <label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Thêm ảnh / video <em id="mediaCount">0 file</em></label>
+      <div id="mediaStrip" class="media-strip"></div>
+      <button id="matchBtn" class="primary" disabled><span>✦</span>Tự động ghép khớp lời</button>
+    </section>
+    <section class="workspace panel">
+      <div class="canvas" id="canvas"><div class="empty"><b>▶</b><strong>Bản xem trước</strong><span>Hoàn thành 3 bước để tạo timeline</span></div><div id="caption" class="caption"></div></div>
+      <div class="transport"><button id="playBtn" disabled>▶</button><strong id="currentTime">00:00</strong><div class="bar"><i id="progress"></i></div><span id="totalTime">00:00</span></div>
+      <div class="timeline-title"><div><strong>Timeline</strong><span id="sceneCount">0 cảnh</span></div><button id="exportBtn" disabled>⇩ Xuất bản dựng</button></div>
+      <div id="timeline" class="timeline"><div class="timeline-empty">Chưa có cảnh để hiển thị.</div></div>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
