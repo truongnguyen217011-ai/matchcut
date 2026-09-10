@@ -395,12 +395,16 @@ app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
     let samples = wav.getSamples();
     if (Array.isArray(samples)) samples = samples[0];
     const transcriber = await getWhisper();
-    const output = await transcriber(samples, {
+    const language = req.body.language;
+    const options = {
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
-    });
+    };
+    if (language && language !== "auto") options.language = language;
+    const output = await transcriber(samples, options);
     res.json({
+      language: language || "auto",
       text: output.text || "",
       chunks: (output.chunks || [])
         .map((c) => ({

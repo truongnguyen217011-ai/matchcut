@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.6</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.7</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -31,7 +31,24 @@
         <fieldset><legend>Kênh & Footage</legend><div class="profile-toolbar"><select id="profileSelect"></select><button id="newProfile" type="button">＋ Mới</button><button id="renameProfile" type="button">✎ Đổi tên</button><button id="saveProfile" type="button">▣ Lưu</button><button id="cloneProfile" type="button">⧉ Sao chép</button><button id="deleteProfile" type="button">⌫ Xóa</button></div><div id="profileStatus" class="profile-status"></div><div class="effect-grid">
           <label class="wide">Tên cấu hình<input id="profileName" value="Kênh mặc định"></label>
           <label>Tỷ lệ khung<select id="aspectRatio"><option value="16:9">16:9 (1920×1080)</option><option value="9:16">9:16 (1080×1920)</option><option value="1:1">1:1 (1080×1080)</option></select></label>
-          <label>Ngôn ngữ<select id="language"><option value="vi">Tiếng Việt</option><option value="en">English</option><option value="es">Español</option></select></label>
+          <label>Ngôn ngữ<select id="language">
+            <option value="auto">Tự động nhận diện</option>
+            <option value="vi">Tiếng Việt</option><option value="en">English</option><option value="es">Español</option>
+            <option value="pt">Português</option><option value="fr">Français</option><option value="de">Deutsch</option>
+            <option value="it">Italiano</option><option value="nl">Nederlands</option><option value="pl">Polski</option>
+            <option value="ru">Русский</option><option value="uk">Українська</option><option value="tr">Türkçe</option>
+            <option value="ar">العربية</option><option value="fa">فارسی</option><option value="he">עברית</option>
+            <option value="hi">हिन्दी</option><option value="bn">বাংলা</option><option value="ur">اردو</option>
+            <option value="ta">தமிழ்</option><option value="te">తెలుగు</option><option value="id">Bahasa Indonesia</option>
+            <option value="ms">Bahasa Melayu</option><option value="th">ภาษาไทย</option><option value="tl">Filipino / Tagalog</option>
+            <option value="zh">中文</option><option value="ja">日本語</option><option value="ko">한국어</option>
+            <option value="sv">Svenska</option><option value="no">Norsk</option><option value="da">Dansk</option>
+            <option value="fi">Suomi</option><option value="cs">Čeština</option><option value="ro">Română</option>
+            <option value="hu">Magyar</option><option value="el">Ελληνικά</option><option value="bg">Български</option>
+            <option value="hr">Hrvatski</option><option value="sk">Slovenčina</option><option value="ca">Català</option>
+            <option value="sr">Српски</option><option value="sl">Slovenščina</option><option value="et">Eesti</option>
+            <option value="lv">Latviešu</option><option value="lt">Lietuvių</option>
+          </select></label>
           <label class="check wide"><input id="poolMode" type="checkbox"> Pool Mode — xoay vòng tư liệu</label>
         </div></fieldset>
         <fieldset><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">

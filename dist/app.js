@@ -409,6 +409,7 @@ $("#whisperBtn").onclick = async () => {
     "Whisper đang nhận dạng voice. Lần đầu sẽ tải model khoảng 75 MB và có thể mất vài phút…";
   const form = new FormData();
   form.append("voice", activeVoiceFile);
+  form.append("language", $("#language").value);
   try {
     const response = await fetch("/api/transcribe", {
         method: "POST",
@@ -517,7 +518,7 @@ $("#clearBatch").onclick = () => { if (batchRunning) return; batchFiles = []; re
 $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu cầu dừng. File hiện tại sẽ hoàn tất rồi hàng đợi dừng lại."); };
 async function processBatchItem(item) {
   item.status = "Tạo timestamp"; renderBatchList(); batchLog(`Đang nhận dạng: ${item.file.name}`);
-  const transcribeForm = new FormData(); transcribeForm.append("voice", item.file);
+  const transcribeForm = new FormData(); transcribeForm.append("voice", item.file); transcribeForm.append("language", $("#language").value);
   const transcribeResponse = await fetch("/api/transcribe", { method: "POST", body: transcribeForm });
   const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Whisper thất bại");
   const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice");
