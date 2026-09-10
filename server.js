@@ -6,6 +6,7 @@ import {
   copyFile,
   mkdir,
   readFile,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -25,6 +26,7 @@ const app = express(),
     dest: jobsRoot,
     limits: { fileSize: 1024 * 1024 * 1024, files: 108 },
   });
+app.use(express.json({ limit: "2mb" }));
 app.use(
   express.static(path.join(root, "dist"), {
     etag: false,
@@ -134,6 +136,34 @@ function createAss(scenes, settings) {
   const title = settings.persistentTitle && settings.titleLine1 ? `\nDialogue: 1,0:00:00.00,${end},Title,,0,0,0,,${assEscape([settings.titleLine1, settings.titleLine2].filter(Boolean).join("\n"))}` : "";
   return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${font},${size},${primary},${accent},${outline},&H${alpha}000000,${bold},${italic},0,0,100,100,${spacing},0,3,${outlineSize},1,${position[0]},90,90,${position[1]},1\nStyle: Title,${font},62,${accent},${primary},${outline},&H50000000,-1,0,0,0,100,100,1,0,3,3,2,9,60,60,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events}${title}\n`;
 }
+const allowedLocalMedia = new Set();
+const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+app.post("/api/media-folders", async (req, res) => {
+  try {
+    const folders = Array.isArray(req.body?.folders) ? req.body.folders : [], files = [], acceptedFolders = [];
+    for (const rawFolder of folders) {
+      const folder = path.resolve(String(rawFolder || "").trim());
+      const info = await stat(folder);
+      if (!info.isDirectory()) throw new Error(`${folder} không phải thư mục.`);
+      acceptedFolders.push(folder);
+      const pending = [folder];
+      while (pending.length) {
+        const current = pending.pop();
+        for (const entry of await readdir(current, { withFileTypes: true })) {
+          const fullPath = path.join(current, entry.name), extension = path.extname(entry.name).toLowerCase();
+          if (entry.isDirectory()) pending.push(fullPath);
+          else if (entry.isFile() && mediaExtensions.has(extension)) {
+            allowedLocalMedia.add(fullPath);
+            files.push({ name: entry.name, localPath: fullPath, type: [".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"].includes(extension) ? "video" : "image" });
+          }
+        }
+      }
+    }
+    res.json({ ok: true, folders: acceptedFolders, files });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Không thể quét thư mục." });
+  }
+});
 app.post(
   "/api/render",
   upload.fields([
@@ -153,7 +183,7 @@ app.post(
         media = req.files?.media || [],
         scenes = JSON.parse(req.body.scenes || "[]"),
         settings = JSON.parse(req.body.settings || "{}");
-      if (!voice || !media.length || !scenes.length)
+      if (!voice || !scenes.length || (!media.length && !scenes.some((scene) => scene.mediaPath)))
         return res
           .status(400)
           .json({ error: "Thiếu voice, tư liệu hoặc timeline." });
@@ -161,7 +191,7 @@ app.post(
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i],
-          source = media[scene.mediaIndex]?.path;
+          source = scene.mediaPath && allowedLocalMedia.has(path.resolve(scene.mediaPath)) ? path.resolve(scene.mediaPath) : media[scene.mediaIndex]?.path;
         if (!source)
           throw new Error(`Không tìm thấy tư liệu cho cảnh ${i + 1}`);
         const out = path.join(dir, `scene-${String(i).padStart(4, "0")}.mp4`),

@@ -2,7 +2,6 @@ const $ = (s) => document.querySelector(s);
 const audio = $("#audio"),
   voice = $("#voiceInput"),
   mediaInput = $("#mediaInput"),
-  mediaFolderInput = $("#mediaFolderInput"),
   script = $("#script"),
   match = $("#matchBtn"),
   timeline = $("#timeline"),
@@ -54,7 +53,7 @@ function effectSettings() {
     titleEffect: $("#titleEffect").value,
     titlePosition: $("#titlePosition").value,
     mediaSelectionMode: $("#mediaSelectionMode").value,
-    maxMediaPerVideo: Number($("#maxMediaPerVideo").value),
+    folderPaths: $("#folderPaths").value,
   };
 }
 function applyCaptionStyle() {
@@ -70,7 +69,7 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
   control.addEventListener("input", applyCaptionStyle),
 );
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","maxMediaPerVideo"];
+const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -89,10 +88,8 @@ loadProfile(activeProfile);
 function mediaPlan(count) {
   if (!assets.length) return [];
   const mode = $("#mediaSelectionMode").value;
-  const limit = Math.min(assets.length, Math.max(5, Number($("#maxMediaPerVideo").value) || 60));
   const candidates = assets.map((_, index) => index);
   if (mode !== "sequential") for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
-  candidates.length = limit;
   if (mode === "sequential") return Array.from({ length: count }, (_, index) => candidates[index % candidates.length]);
   if (mode === "random") return Array.from({ length: count }, () => candidates[Math.floor(Math.random() * candidates.length)]);
   const result = [], bag = [];
@@ -144,7 +141,7 @@ script.oninput = () => {
 };
 function addMediaFiles(files) {
   for (const f of files) {
-    if (assets.some((asset) => asset.name === f.name && asset.file.size === f.size && asset.file.lastModified === f.lastModified)) continue;
+    if (assets.some((asset) => asset.file && asset.name === f.name && asset.file.size === f.size && asset.file.lastModified === f.lastModified)) continue;
     assets.push({
       name: f.name,
       type: f.type.startsWith("video/") ? "video" : "image",
@@ -153,7 +150,7 @@ function addMediaFiles(files) {
     });
   }
   $("#mediaCount").textContent = `${assets.length} file`;
-  const previewAssets = assets.slice(0, 24);
+  const previewAssets = assets.filter((asset) => asset.file).slice(0, 24);
   for (const asset of previewAssets) asset.url ||= URL.createObjectURL(asset.file);
   $("#mediaStrip").innerHTML = previewAssets
     .map(
@@ -165,7 +162,22 @@ function addMediaFiles(files) {
   updateBatchButtons();
 }
 mediaInput.onchange = () => addMediaFiles(mediaInput.files);
-mediaFolderInput.onchange = () => addMediaFiles(mediaFolderInput.files);
+$("#addFolders").onclick = async () => {
+  const folders = $("#folderPaths").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  if (!folders.length) return;
+  $("#folderList").textContent = "Đang quét trực tiếp trên ổ đĩa…";
+  try {
+    const response = await fetch("/api/media-folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folders }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không thể quét folder");
+    assets = assets.filter((asset) => asset.file);
+    for (const item of result.files) assets.push({ ...item, file: null, url: null });
+    $("#mediaCount").textContent = `${assets.length} file`;
+    $("#folderList").innerHTML = result.folders.map((folder) => `<div><strong>▣ ${folder}</strong></div>`).join("") + `<span>${result.files.length.toLocaleString("vi-VN")} file được lập chỉ mục, không tải vào trình duyệt.</span>`;
+    $("#mediaStrip").innerHTML = `<div class="media-summary">Kho cục bộ sẵn sàng: ${result.files.length.toLocaleString("vi-VN")} file · FFmpeg sẽ đọc trực tiếp khi render</div>`;
+    ready(); updateBatchButtons();
+  } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
+};
 match.onclick = async () => {
   if (!ready()) {
     const status = $("#matchStatus");
@@ -263,14 +275,14 @@ function renderTimeline(focusId = 1) {
     const number = document.createElement("span");
     number.textContent = s.id;
     let media;
-    if (s.media.type === "image") {
+    if (s.media.type === "image" && s.media.file) {
       media = document.createElement("img");
       media.src = s.media.url;
       media.loading = "lazy";
     } else {
       media = document.createElement("div");
       media.className = "video-chip";
-      media.textContent = "VIDEO";
+      media.textContent = s.media.file ? "VIDEO" : "LOCAL";
     }
     const copy = document.createElement("div"),
       time = document.createElement("strong"),
@@ -293,6 +305,11 @@ function renderTimeline(focusId = 1) {
 }
 function showScene(s) {
   if (!s || !s.media) return;
+  if (!s.media.file) {
+    canvas.querySelectorAll("img,video,.empty").forEach((x) => x.remove());
+    const local = document.createElement("div"); local.className = "empty"; local.dataset.previewId = s.id; local.innerHTML = `<b>▣</b><strong>File cục bộ</strong><span>${s.media.name}</span>`; canvas.prepend(local);
+    caption.textContent = s.text || ""; applyCaptionStyle(); return;
+  }
   s.media.url ||= URL.createObjectURL(s.media.file);
   const current = canvas.querySelector("[data-preview-id]");
   if (current?.dataset.previewId !== String(s.id)) {
@@ -428,6 +445,7 @@ async function renderVideo() {
         start: s.start,
         end: s.end,
         mediaIndex: compact.indexByAsset.get(s.media),
+        mediaPath: s.media.localPath || null,
         mediaType: s.media.type,
         text: s.text,
       })),
@@ -451,7 +469,7 @@ $("#exportBtn").onclick = renderVideo;
 function appendUsedMedia(form, sceneList) {
   const indexByAsset = new Map();
   for (const scene of sceneList) {
-    if (!indexByAsset.has(scene.media)) {
+    if (scene.media.file && !indexByAsset.has(scene.media)) {
       indexByAsset.set(scene.media, indexByAsset.size);
       form.append("media", scene.media.file);
     }
@@ -485,7 +503,7 @@ async function processBatchItem(item) {
   for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) renderForm.append(field,file); }
   const batchScenes = chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, media:assets[chosenMedia[index]] }));
   const compact = appendUsedMedia(renderForm, batchScenes);
-  renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaType:scene.media.type }))));
+  renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaPath:scene.media.localPath || null, mediaType:scene.media.type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
   const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
   item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName} → ${result.savedPath}`);
