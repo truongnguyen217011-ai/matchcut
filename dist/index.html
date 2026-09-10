@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut</strong><span>Ghép video khớp lời · v2.3</span></div></div><div class="status"><i></i>Xử lý trên thiết bị</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Video Production Console · v2.4</span></div></div><div class="status"><i></i>FFmpeg sẵn sàng</div></header>
   <main>
     <section class="setup panel">
       <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
@@ -22,25 +22,22 @@
       <div class="title"><span>03</span><div><h2>Kho tư liệu</h2><p>Chọn nhiều ảnh hoặc video</p></div></div>
       <label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Thêm ảnh / video <em id="mediaCount">0 file</em></label>
       <div id="mediaStrip" class="media-strip"></div>
-      <div class="title"><span>04</span><div><h2>Hiệu ứng & phụ đề</h2><p>Áp dụng cho preview và video xuất</p></div></div>
-      <div class="effect-grid">
-        <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Georgia</option></select></label>
-        <label>Cỡ chữ<select id="fontSize"><option value="42">Nhỏ</option><option value="56" selected>Vừa</option><option value="72">Lớn</option></select></label>
-        <label>Hiệu ứng chữ<select id="textEffect"><option value="none">Không</option><option value="fade">Fade</option><option value="pop" selected>Pop</option><option value="karaoke">Karaoke</option></select></label>
-        <label>Chuyển cảnh<select id="transition"><option value="none">Cắt thẳng</option><option value="fade" selected>Fade</option><option value="zoom">Zoom nhẹ</option><option value="slide">Trượt ngang</option></select></label>
-        <label>Màu chữ<input id="fontColor" type="color" value="#ffffff"></label>
-        <label>Màu nhấn<input id="accentColor" type="color" value="#2af0a8"></label>
-        <label class="wide">Vị trí<select id="subtitlePosition"><option value="bottom" selected>Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
-        <label class="check wide"><input id="subtitleEnabled" type="checkbox" checked> Gắn phụ đề vào video xuất</label>
-      </div>
-      <details class="advanced"><summary>Cài đặt nâng cao kiểu RumLab</summary>
+      <div class="title"><span>04</span><div><h2>Cấu hình sản xuất</h2><p>Một bảng duy nhất cho kênh, hình, chữ và âm thanh</p></div></div>
+      <details class="advanced" open><summary>Thiết lập video</summary>
         <fieldset><legend>Kênh & Footage</legend><div class="profile-toolbar"><select id="profileSelect"></select><button id="newProfile" type="button">＋ Mới</button><button id="saveProfile" type="button">▣ Lưu</button><button id="cloneProfile" type="button">⧉ Sao chép</button><button id="deleteProfile" type="button">⌫ Xóa</button></div><div id="profileStatus" class="profile-status"></div><div class="effect-grid">
           <label class="wide">Tên cấu hình<input id="profileName" value="Kênh mặc định"></label>
           <label>Tỷ lệ khung<select id="aspectRatio"><option value="16:9">16:9 (1920×1080)</option><option value="9:16">9:16 (1080×1920)</option><option value="1:1">1:1 (1080×1080)</option></select></label>
           <label>Ngôn ngữ<select id="language"><option value="vi">Tiếng Việt</option><option value="en">English</option><option value="es">Español</option></select></label>
           <label class="check wide"><input id="poolMode" type="checkbox"> Pool Mode — xoay vòng tư liệu</label>
         </div></fieldset>
-        <fieldset><legend>Font & kiểu phụ đề</legend><div class="effect-grid">
+        <fieldset><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">
+          <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Georgia</option></select></label>
+          <label>Cỡ chữ<select id="fontSize"><option value="42">Nhỏ</option><option value="56" selected>Vừa</option><option value="72">Lớn</option></select></label>
+          <label>Hiệu ứng chữ<select id="textEffect"><option value="none">Không</option><option value="fade">Fade</option><option value="pop" selected>Pop</option><option value="karaoke">Karaoke</option></select></label>
+          <label>Chuyển cảnh<select id="transition"><option value="none">Cắt thẳng</option><option value="fade" selected>Fade</option><option value="zoom">Zoom nhẹ</option><option value="slide">Trượt ngang</option></select></label>
+          <label>Màu chữ<input id="fontColor" type="color" value="#ffffff"></label><label>Màu nhấn<input id="accentColor" type="color" value="#2af0a8"></label>
+          <label>Vị trí<select id="subtitlePosition"><option value="bottom" selected>Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
+          <label class="check"><input id="subtitleEnabled" type="checkbox" checked> Gắn phụ đề vào video</label>
           <label class="check"><input id="fontBold" type="checkbox" checked> Đậm</label><label class="check"><input id="fontItalic" type="checkbox"> Nghiêng</label>
           <label>Độ dày viền<input id="outlineSize" type="number" min="0" max="12" value="2"></label><label>Độ mờ nền<input id="subtitleBg" type="range" min="0" max="100" value="45"></label>
           <label>Số từ/cụm<input id="wordsPerCaption" type="number" min="1" max="20" value="8"></label><label>Số dòng tối đa<input id="maxLines" type="number" min="1" max="4" value="2"></label>
