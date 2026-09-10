@@ -371,9 +371,11 @@ app.post(
           "-i",
           audioSource,
         ];
-      let nextVideoInput = 2, overlayInputIndex = null, watermarkInputIndex = null;
+      let nextVideoInput = 2, overlayInputIndex = null, watermarkInputIndex = null, voiceWaveformInputIndex = null, musicWaveformInputIndex = null;
       if (overlayImagePath) { overlayInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", overlayImagePath); }
       if (watermark) { watermarkInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", watermark.path); }
+      if (settings.voiceWaveformEnabled) { voiceWaveformInputIndex = nextVideoInput++; inputArgs.push("-i", voice.path); }
+      if (settings.waveformEnabled && music) { musicWaveformInputIndex = nextVideoInput++; inputArgs.push("-stream_loop", "-1", "-i", music.path); }
       let subtitleFilter = "";
       if (settings.subtitleEnabled !== false) {
         const assPath = path.join(dir, "captions.ass");
@@ -386,7 +388,7 @@ app.post(
         subtitleFilter = `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`;
       }
       const encodeArgs = [...inputArgs];
-      const hasVisualLayers = overlayInputIndex !== null || watermarkInputIndex !== null;
+      const hasVisualLayers = overlayInputIndex !== null || watermarkInputIndex !== null || voiceWaveformInputIndex !== null || musicWaveformInputIndex !== null;
       if (hasVisualLayers) {
         const filters = ["[0:v]null[vbase]"]; let current = "vbase", layerNumber = 0;
         if (overlayInputIndex !== null) {
@@ -394,6 +396,18 @@ app.post(
           filters.push(`[${overlayInputIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
           filters.push(`[${current}][overlayimg]overlay=0:0:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
+        const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
+          waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120)),
+          waveCenterX = width * Math.min(95, Math.max(5, Number(settings.waveformX) || 50)) / 100,
+          waveX = Math.max(0, Math.min(width - waveWidth, Math.round(waveCenterX - waveWidth / 2)));
+        const addWaveform = (inputIndex, color, yPercent, name) => {
+          if (inputIndex === null) return;
+          const safeColor = String(color || "#ffffff").replace("#", ""), centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100, waveY = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
+          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=30,format=rgba[${name}]`);
+          filters.push(`[${current}][${name}]overlay=${waveX}:${waveY}:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
+        };
+        addWaveform(musicWaveformInputIndex, settings.waveformColor, settings.waveformY, "musicwave");
+        addWaveform(voiceWaveformInputIndex, settings.voiceWaveformColor, settings.voiceWaveformY, "voicewave");
         if (watermarkInputIndex !== null) {
           const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100,
             speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),
