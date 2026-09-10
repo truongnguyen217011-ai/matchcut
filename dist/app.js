@@ -180,7 +180,7 @@ async function scanFolders() {
 }
 $("#addFolders").onclick = scanFolders;
 $("#pickFolder").onclick = async () => {
-  const button = $("#pickFolder"); button.disabled = true; button.textContent = "Đang mở cửa sổ chọn folder…";
+  const button = $("#pickFolder"); button.disabled = true; button.textContent = "Hộp thoại đang mở phía trước…"; $("#folderList").textContent = "Chọn một folder trong cửa sổ Windows vừa mở, hoặc bấm Cancel để quay lại.";
   try {
     const response = await fetch("/api/pick-folder", { method: "POST" }), result = await response.json();
     if (!response.ok) throw new Error(result.error || "Không mở được cửa sổ chọn folder");

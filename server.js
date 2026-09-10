@@ -63,7 +63,7 @@ function run(args) {
 }
 function runCapture(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: false });
+    const child = spawn(command, args, { windowsHide: true });
     let output = "", error = "";
     child.stdout.on("data", (chunk) => (output += chunk.toString()));
     child.stderr.on("data", (chunk) => (error += chunk.toString()));
@@ -150,8 +150,8 @@ const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
 app.post("/api/pick-folder", async (_req, res) => {
   try {
-    const script = "Add-Type -AssemblyName System.Windows.Forms; $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description='Chọn thư mục tư liệu cho MatchCut'; $dialog.ShowNewFolderButton=$false; if($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath}";
-    const folder = await runCapture("powershell.exe", ["-NoProfile", "-STA", "-Command", script]);
+    const script = "Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Width=1; $owner.Height=1; $owner.StartPosition='CenterScreen'; $owner.Show(); $owner.Activate(); $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description='Chọn thư mục tư liệu cho MatchCut'; $dialog.ShowNewFolderButton=$false; $result=$dialog.ShowDialog($owner); $owner.Close(); if($result -eq [System.Windows.Forms.DialogResult]::OK){[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath}";
+    const folder = await runCapture("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", script]);
     res.json({ ok: true, folder: folder || null });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Không mở được cửa sổ chọn folder." });
