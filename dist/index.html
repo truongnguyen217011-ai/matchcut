@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.1</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.2</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -22,7 +22,7 @@
       <div class="auto-pipeline-data"><label id="voiceDrop"><strong id="voiceLabel">Chưa chọn voice</strong></label><button id="whisperBtn" disabled></button><div id="whisperStatus"></div><audio id="audio"></audio><textarea id="script"></textarea></div>
       <div class="title"><span>01</span><div><h2>Kho tư liệu</h2><p>Dùng chung cho toàn bộ dây chuyền</p></div></div>
       <div class="media-source-actions"><label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Chọn nhiều ảnh / video <em id="mediaCount">0 file</em></label><label class="media-add folder-add"><input id="mediaFolderInput" type="file" accept="image/*,video/*" webkitdirectory directory multiple><span>▣</span> Chọn thư mục tư liệu</label></div>
-      <label class="media-mode">Cách chọn tư liệu cho từng cảnh<select id="mediaSelectionMode"><option value="sequential">Tuần tự theo danh sách</option><option value="random" selected>Ngẫu nhiên</option><option value="shuffle">Ngẫu nhiên, không lặp liên tiếp</option></select></label>
+      <div class="media-mode"><label>Cách chọn tư liệu cho từng cảnh<select id="mediaSelectionMode"><option value="sequential">Tuần tự theo danh sách</option><option value="random" selected>Ngẫu nhiên</option><option value="shuffle">Ngẫu nhiên, không lặp liên tiếp</option></select></label><label>Tối đa mỗi video<input id="maxMediaPerVideo" type="number" min="5" max="100" value="60"><span>file</span></label></div>
       <div id="mediaStrip" class="media-strip"></div>
       <div class="title"><span>02</span><div><h2>Cấu hình sản xuất</h2><p>Thiết lập một lần và lưu theo từng kênh</p></div></div>
       <details class="advanced" open><summary>Thiết lập video</summary>

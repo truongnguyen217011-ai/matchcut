@@ -23,7 +23,7 @@ await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
     dest: jobsRoot,
-    limits: { fileSize: 1024 * 1024 * 1024, files: 101 },
+    limits: { fileSize: 1024 * 1024 * 1024, files: 108 },
   });
 app.use(
   express.static(path.join(root, "dist"), {

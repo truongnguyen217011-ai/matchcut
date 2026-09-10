@@ -54,6 +54,7 @@ function effectSettings() {
     titleEffect: $("#titleEffect").value,
     titlePosition: $("#titlePosition").value,
     mediaSelectionMode: $("#mediaSelectionMode").value,
+    maxMediaPerVideo: Number($("#maxMediaPerVideo").value),
   };
 }
 function applyCaptionStyle() {
@@ -69,7 +70,7 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
   control.addEventListener("input", applyCaptionStyle),
 );
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode"];
+const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","maxMediaPerVideo"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -88,12 +89,16 @@ loadProfile(activeProfile);
 function mediaPlan(count) {
   if (!assets.length) return [];
   const mode = $("#mediaSelectionMode").value;
-  if (mode === "sequential") return Array.from({ length: count }, (_, index) => index % assets.length);
-  if (mode === "random") return Array.from({ length: count }, () => Math.floor(Math.random() * assets.length));
+  const limit = Math.min(assets.length, Math.max(5, Number($("#maxMediaPerVideo").value) || 60));
+  const candidates = assets.map((_, index) => index);
+  if (mode !== "sequential") for (let i = candidates.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [candidates[i], candidates[j]] = [candidates[j], candidates[i]]; }
+  candidates.length = limit;
+  if (mode === "sequential") return Array.from({ length: count }, (_, index) => candidates[index % candidates.length]);
+  if (mode === "random") return Array.from({ length: count }, () => candidates[Math.floor(Math.random() * candidates.length)]);
   const result = [], bag = [];
   while (result.length < count) {
     if (!bag.length) {
-      bag.push(...assets.map((_, index) => index));
+      bag.push(...candidates);
       for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
       if (result.length && bag.length > 1 && bag[0] === result.at(-1)) [bag[0], bag[1]] = [bag[1], bag[0]];
     }
@@ -143,17 +148,19 @@ function addMediaFiles(files) {
     assets.push({
       name: f.name,
       type: f.type.startsWith("video/") ? "video" : "image",
-      url: URL.createObjectURL(f),
+      url: null,
       file: f,
     });
   }
   $("#mediaCount").textContent = `${assets.length} file`;
-  $("#mediaStrip").innerHTML = assets
+  const previewAssets = assets.slice(0, 24);
+  for (const asset of previewAssets) asset.url ||= URL.createObjectURL(asset.file);
+  $("#mediaStrip").innerHTML = previewAssets
     .map(
       (a) =>
         `<div class="thumb">${a.type === "image" ? `<img src="${a.url}">` : `<video src="${a.url}" muted>`}</div>`,
     )
-    .join("");
+    .join("") + `<div class="media-summary">${assets.length > 24 ? `Đang ẩn ${assets.length - 24} thumbnail để tiết kiệm bộ nhớ` : "Kho tư liệu đã sẵn sàng"}</div>`;
   ready();
   updateBatchButtons();
 }
@@ -286,6 +293,7 @@ function renderTimeline(focusId = 1) {
 }
 function showScene(s) {
   if (!s || !s.media) return;
+  s.media.url ||= URL.createObjectURL(s.media.file);
   const current = canvas.querySelector("[data-preview-id]");
   if (current?.dataset.previewId !== String(s.id)) {
     canvas.querySelectorAll("img,video,.empty").forEach((x) => x.remove());
@@ -408,7 +416,7 @@ async function renderVideo() {
   status.textContent = `FFmpeg đang render. Video sẽ được lưu tại C:\\MatchCut\\Exports với tên “${activeVoiceFile?.name.replace(/\.[^.]+$/, "")}.mp4”…`;
   const form = new FormData();
   form.append("voice", activeVoiceFile);
-  assets.forEach((a) => form.append("media", a.file));
+  const compact = appendUsedMedia(form, scenes);
   for (const [field, id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) {
     const file = $(id).files[0];
     if (file) form.append(field, file);
@@ -419,7 +427,7 @@ async function renderVideo() {
       scenes.map((s) => ({
         start: s.start,
         end: s.end,
-        mediaIndex: assets.indexOf(s.media),
+        mediaIndex: compact.indexByAsset.get(s.media),
         mediaType: s.media.type,
         text: s.text,
       })),
@@ -439,6 +447,17 @@ async function renderVideo() {
   }
 }
 $("#exportBtn").onclick = renderVideo;
+
+function appendUsedMedia(form, sceneList) {
+  const indexByAsset = new Map();
+  for (const scene of sceneList) {
+    if (!indexByAsset.has(scene.media)) {
+      indexByAsset.set(scene.media, indexByAsset.size);
+      form.append("media", scene.media.file);
+    }
+  }
+  return { indexByAsset };
+}
 
 let batchFiles = [], batchRunning = false, batchStopRequested = false;
 const batchLog = (message) => { const box = $("#batchLog"); box.textContent += `\n[${new Date().toLocaleTimeString("vi-VN")}] ${message}`; box.scrollTop = box.scrollHeight; };
@@ -462,9 +481,11 @@ async function processBatchItem(item) {
   const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice");
   item.status = "Đang render"; renderBatchList(); batchLog(`Đang render ${chunks.length} cảnh: ${item.file.name}`);
   const chosenMedia = mediaPlan(chunks.length);
-  const renderForm = new FormData(); renderForm.append("voice", item.file); assets.forEach((asset) => renderForm.append("media", asset.file));
+  const renderForm = new FormData(); renderForm.append("voice", item.file);
   for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) renderForm.append(field,file); }
-  renderForm.append("scenes", JSON.stringify(chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, mediaIndex:chosenMedia[index], mediaType:assets[chosenMedia[index]].type }))));
+  const batchScenes = chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, media:assets[chosenMedia[index]] }));
+  const compact = appendUsedMedia(renderForm, batchScenes);
+  renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaType:scene.media.type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
   const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
   item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName} → ${result.savedPath}`);
