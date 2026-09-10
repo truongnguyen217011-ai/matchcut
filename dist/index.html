@@ -6,6 +6,7 @@
   <title>MatchCut — Ghép video khớp lời</title>
   <meta name="description" content="Công cụ ghép ảnh và video khớp lời thuyết minh trên timeline." />
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
   <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut</strong><span>Ghép video khớp lời</span></div></div><div class="status"><i></i>Xử lý trên thiết bị</div></header>
@@ -24,7 +25,8 @@
     <section class="workspace panel">
       <div class="canvas" id="canvas"><div class="empty"><b>▶</b><strong>Bản xem trước</strong><span>Hoàn thành 3 bước để tạo timeline</span></div><div id="caption" class="caption"></div></div>
       <div class="transport"><button id="playBtn" disabled>▶</button><strong id="currentTime">00:00</strong><div class="bar"><i id="progress"></i></div><span id="totalTime">00:00</span></div>
-      <div class="timeline-title"><div><strong>Timeline</strong><span id="sceneCount">0 cảnh</span></div><button id="exportBtn" disabled>⇩ Xuất bản dựng</button></div>
+      <div class="timeline-title"><div><strong>Timeline</strong><span id="sceneCount">0 cảnh</span></div><div class="exports"><button id="planBtn" disabled>⇩ JSON</button><button id="exportBtn" class="render" disabled>● Xuất MP4 bằng FFmpeg</button></div></div>
+      <div id="renderStatus" class="render-status"></div>
       <div id="timeline" class="timeline"><div class="timeline-empty">Chưa có cảnh để hiển thị.</div></div>
     </section>
   </main>
