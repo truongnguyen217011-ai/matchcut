@@ -2,6 +2,7 @@ const $ = (s) => document.querySelector(s);
 const audio = $("#audio"),
   voice = $("#voiceInput"),
   mediaInput = $("#mediaInput"),
+  mediaFolderInput = $("#mediaFolderInput"),
   script = $("#script"),
   match = $("#matchBtn"),
   timeline = $("#timeline"),
@@ -52,6 +53,7 @@ function effectSettings() {
     titleLine2: $("#titleLine2").value,
     titleEffect: $("#titleEffect").value,
     titlePosition: $("#titlePosition").value,
+    mediaSelectionMode: $("#mediaSelectionMode").value,
   };
 }
 function applyCaptionStyle() {
@@ -67,7 +69,7 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
   control.addEventListener("input", applyCaptionStyle),
 );
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition"];
+const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -83,6 +85,22 @@ $("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || s
 $("#deleteProfile").onclick = () => { if (Object.keys(profiles).length === 1) { $("#profileStatus").textContent = "Phải giữ lại ít nhất một cấu hình kênh."; return; } const oldName = profiles[activeProfile]?.profileName; delete profiles[activeProfile]; activeProfile = Object.keys(profiles)[0]; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); $("#profileStatus").textContent = `Đã xóa “${oldName}”.`; };
 renderProfileSelect();
 loadProfile(activeProfile);
+function mediaPlan(count) {
+  if (!assets.length) return [];
+  const mode = $("#mediaSelectionMode").value;
+  if (mode === "sequential") return Array.from({ length: count }, (_, index) => index % assets.length);
+  if (mode === "random") return Array.from({ length: count }, () => Math.floor(Math.random() * assets.length));
+  const result = [], bag = [];
+  while (result.length < count) {
+    if (!bag.length) {
+      bag.push(...assets.map((_, index) => index));
+      for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+      if (result.length && bag.length > 1 && bag[0] === result.at(-1)) [bag[0], bag[1]] = [bag[1], bag[0]];
+    }
+    result.push(bag.shift());
+  }
+  return result;
+}
 function ready() {
   const missing = [];
   if (!audio.src) missing.push("voice");
@@ -119,8 +137,9 @@ voice.onchange = () => {
 script.oninput = () => {
   ready();
 };
-mediaInput.onchange = () => {
-  for (const f of mediaInput.files) {
+function addMediaFiles(files) {
+  for (const f of files) {
+    if (assets.some((asset) => asset.name === f.name && asset.file.size === f.size && asset.file.lastModified === f.lastModified)) continue;
     assets.push({
       name: f.name,
       type: f.type.startsWith("video/") ? "video" : "image",
@@ -136,7 +155,10 @@ mediaInput.onchange = () => {
     )
     .join("");
   ready();
-};
+  updateBatchButtons();
+}
+mediaInput.onchange = () => addMediaFiles(mediaInput.files);
+mediaFolderInput.onchange = () => addMediaFiles(mediaFolderInput.files);
 match.onclick = async () => {
   if (!ready()) {
     const status = $("#matchStatus");
@@ -160,13 +182,14 @@ match.onclick = async () => {
       total = Number.isFinite(audio.duration)
         ? audio.duration
         : Math.max(12, parts.length * 5);
+    const chosenMedia = mediaPlan(whisperChunks.length || parts.length);
     if (whisperChunks.length) {
       scenes = whisperChunks.map((chunk, i) => ({
         id: i + 1,
         start: chunk.start,
         end: chunk.end,
         text: chunk.text,
-        media: assets[i % assets.length],
+        media: assets[chosenMedia[i]],
       }));
     } else {
       const weights = parts.map((x) => Math.max(4, x.split(/\s+/).length)),
@@ -180,7 +203,7 @@ match.onclick = async () => {
             start: t,
             end: t + len,
             text,
-            media: assets[i % assets.length],
+            media: assets[chosenMedia[i]],
           };
         t += len;
         return s;
@@ -438,9 +461,10 @@ async function processBatchItem(item) {
   const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Whisper thất bại");
   const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice");
   item.status = "Đang render"; renderBatchList(); batchLog(`Đang render ${chunks.length} cảnh: ${item.file.name}`);
+  const chosenMedia = mediaPlan(chunks.length);
   const renderForm = new FormData(); renderForm.append("voice", item.file); assets.forEach((asset) => renderForm.append("media", asset.file));
   for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) renderForm.append(field,file); }
-  renderForm.append("scenes", JSON.stringify(chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, mediaIndex:index % assets.length, mediaType:assets[index % assets.length].type }))));
+  renderForm.append("scenes", JSON.stringify(chunks.map((chunk,index) => ({ start:chunk.start, end:chunk.end, text:chunk.text, mediaIndex:chosenMedia[index], mediaType:assets[chosenMedia[index]].type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
   const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
   item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName} → ${result.savedPath}`);
