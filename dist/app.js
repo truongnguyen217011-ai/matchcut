@@ -79,6 +79,15 @@ function renderProfileSelect() { const select = $("#profileSelect"); select.inne
 function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
+$("#renameProfile").onclick = () => {
+  const current = profiles[activeProfile]?.profileName || $("#profileName").value || "Kênh";
+  const next = window.prompt("Nhập tên mới cho cấu hình kênh:", current)?.trim();
+  if (!next || next === current) return;
+  profiles[activeProfile] = { ...profiles[activeProfile], profileName: next };
+  $("#profileName").value = next;
+  persistProfiles(); renderProfileSelect();
+  $("#profileStatus").textContent = `Đã đổi tên “${current}” thành “${next}”.`;
+};
 $("#saveProfile").onclick = () => { const name = $("#profileName").value.trim() || "Kênh chưa đặt tên"; profiles[activeProfile] = { ...snapshotProfile(), profileName: name }; persistProfiles(); renderProfileSelect(); $("#profileStatus").textContent = `Đã lưu cấu hình “${name}” trên máy.`; };
 $("#newProfile").onclick = () => { activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...snapshotProfile(), profileName: `Kênh ${Object.keys(profiles).length + 1}` }; loadProfile(activeProfile); $("#profileName").focus(); $("#profileName").select(); };
 $("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
