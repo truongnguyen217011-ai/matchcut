@@ -45,6 +45,8 @@ function effectSettings() {
     secondaryOutline: $("#secondaryOutline").value,
     chromaKey: $("#chromaKey").checked,
     watermarkOpacity: Number($("#watermarkOpacity").value),
+    watermarkRotate: $("#watermarkRotate").checked,
+    watermarkRotationSpeed: Number($("#watermarkRotationSpeed").value),
     voiceVolume: Number($("#voiceVolume").value),
     voiceDelay: Number($("#voiceDelay").value),
     musicVolume: Number($("#musicVolume").value),
@@ -69,6 +71,7 @@ function applyCaptionStyle() {
   caption.style.left = `${s.subtitleX}%`; caption.style.right = "auto"; caption.style.top = `${s.subtitleY}%`; caption.style.bottom = "auto"; caption.style.width = "84%"; caption.style.transform = "translate(-50%,-50%)";
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
+  $("#watermarkRotationSpeedValue").textContent = `${s.watermarkRotationSpeed}°/giây`;
   canvas.querySelectorAll(":scope > img,:scope > video").forEach((media) => media.style.filter = `brightness(${100 - s.backgroundDarkness}%)`);
   $("#positionStage").style.setProperty("--preview-darkness", String(s.backgroundDarkness / 100));
   updatePositionPreview(s);
@@ -121,6 +124,7 @@ function updateEffectInspector(s = effectSettings()) {
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
+$("#watermarkRotationSpeed").addEventListener("input", applyCaptionStyle);
 const POSITION_PRESETS = {"top-left":[18,15],top:[50,15],"top-right":[82,15],"middle-left":[18,50],middle:[50,50],"middle-right":[82,50],"bottom-left":[18,85],bottom:[50,85],"bottom-right":[82,85]};
 function updatePositionPreview(s = effectSettings()) {
   $("#subtitleXValue").textContent = `${s.subtitleX}%`; $("#subtitleYValue").textContent = `${s.subtitleY}%`;
@@ -134,7 +138,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };

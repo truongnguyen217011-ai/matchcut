@@ -339,8 +339,8 @@ app.post(
         const filter = music ? `${voiceFilter};[1:a]volume=${(Math.max(0, Number(settings.musicVolume || 6)) / 100).toFixed(3)}[music];[voice][music]amix=inputs=2:duration=first:dropout_transition=2[aout]` : `${voiceFilter};[voice]anull[aout]`;
         await run([...audioArgs, "-filter_complex", filter, "-map", "[aout]", "-t", String(Math.max(...scenes.map((scene) => Number(scene.end) || 0))), "-c:a", "aac", "-b:a", "192k", audioSource]);
       }
-      const output = path.join(dir, "matchcut-output.mp4"),
-        baseArgs = [
+      const output = path.join(dir, "matchcut-output.mp4"), watermark = req.files?.watermark?.[0],
+        inputArgs = [
           "-y",
           "-hide_banner",
           "-loglevel",
@@ -349,11 +349,9 @@ app.post(
           joined,
           "-i",
           audioSource,
-          "-map",
-          "0:v:0",
-          "-map",
-          "1:a:0",
         ];
+      if (watermark) inputArgs.push("-loop", "1", "-i", watermark.path);
+      let subtitleFilter = "";
       if (settings.subtitleEnabled !== false) {
         const assPath = path.join(dir, "captions.ass");
         await writeFile(assPath, createAss(scenes, settings), "utf8");
@@ -362,39 +360,24 @@ app.post(
           .replace(":", "\\:")
           .replaceAll("'", "\\'");
         const escapedFonts = fontsRoot.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
-        await run([
-          ...baseArgs,
-          "-vf",
-          `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`,
-          "-c:v",
-          "libx264",
-          "-preset",
-          "veryfast",
-          "-crf",
-          "20",
-          "-c:a",
-          "aac",
-          "-b:a",
-          "192k",
-          "-shortest",
-          "-movflags",
-          "+faststart",
-          output,
-        ]);
-      } else
-        await run([
-          ...baseArgs,
-          "-c:v",
-          "copy",
-          "-c:a",
-          "aac",
-          "-b:a",
-          "192k",
-          "-shortest",
-          "-movflags",
-          "+faststart",
-          output,
-        ]);
+        subtitleFilter = `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`;
+      }
+      const encodeArgs = [...inputArgs];
+      if (watermark) {
+        const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100,
+          speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),
+          rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "",
+          base = subtitleFilter ? `[0:v]${subtitleFilter}[base]` : "[0:v]null[base]",
+          filter = `${base};[2:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm];[base][wm]overlay=W-w-35:35:shortest=1[vout]`;
+        encodeArgs.push("-filter_complex", filter, "-map", "[vout]", "-map", "1:a:0");
+      } else {
+        if (subtitleFilter) encodeArgs.push("-vf", subtitleFilter);
+        encodeArgs.push("-map", "0:v:0", "-map", "1:a:0");
+      }
+      encodeArgs.push("-c:v", subtitleFilter || watermark ? "libx264" : "copy");
+      if (subtitleFilter || watermark) encodeArgs.push("-preset", "veryfast", "-crf", "20");
+      encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", output);
+      await run(encodeArgs);
       const savedPath = await availableExportPath(voice.originalname);
       await copyFile(output, savedPath);
       res.json({
