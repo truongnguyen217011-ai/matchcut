@@ -27,6 +27,8 @@ function effectSettings() {
     fontColor: $("#fontColor").value,
     accentColor: $("#accentColor").value,
     subtitlePosition: $("#subtitlePosition").value,
+    subtitleX: Number($("#subtitleX").value),
+    subtitleY: Number($("#subtitleY").value),
     subtitleEnabled: $("#subtitleEnabled").checked,
     profileName: $("#profileName").value,
     aspectRatio: $("#aspectRatio").value,
@@ -63,7 +65,9 @@ function applyCaptionStyle() {
   caption.style.fontSize = `${Math.max(12, Math.round(19 * s.fontSizePercent / 100))}px`;
   caption.style.color = s.fontColor;
   caption.style.setProperty("--accent", s.accentColor);
+  caption.style.left = `${s.subtitleX}%`; caption.style.right = "auto"; caption.style.top = `${s.subtitleY}%`; caption.style.bottom = "auto"; caption.style.width = "84%"; caption.style.transform = "translate(-50%,-50%)";
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
+  updatePositionPreview(s);
   updateEffectInspector(s);
 }
 const TEXT_EFFECT_INFO = {
@@ -113,15 +117,27 @@ function updateEffectInspector(s = effectSettings()) {
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
+const POSITION_PRESETS = {"top-left":[18,15],top:[50,15],"top-right":[82,15],"middle-left":[18,50],middle:[50,50],"middle-right":[82,50],"bottom-left":[18,85],bottom:[50,85],"bottom-right":[82,85]};
+function updatePositionPreview(s = effectSettings()) {
+  $("#subtitleXValue").textContent = `${s.subtitleX}%`; $("#subtitleYValue").textContent = `${s.subtitleY}%`;
+  const marker = $("#positionMarker"); marker.style.left = `${s.subtitleX}%`; marker.style.top = `${s.subtitleY}%`; marker.style.fontFamily = s.fontFamily; marker.style.color = s.fontColor; marker.style.borderColor = s.accentColor;
+}
+$("#subtitlePosition").addEventListener("change", (event) => { const point = POSITION_PRESETS[event.target.value]; if (point) { $("#subtitleX").value = point[0]; $("#subtitleY").value = point[1]; } applyCaptionStyle(); });
+for (const id of ["subtitleX","subtitleY"]) $("#" + id).addEventListener("input", () => { $("#subtitlePosition").value = "custom"; applyCaptionStyle(); });
+$("#accentSwatches").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { $("#accentColor").value = button.dataset.color; applyCaptionStyle(); }));
+const positionStage = $("#positionStage");
+function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(); $("#subtitleX").value = Math.round(Math.max(5, Math.min(95, (event.clientX - rect.left) / rect.width * 100))); $("#subtitleY").value = Math.round(Math.max(5, Math.min(95, (event.clientY - rect.top) / rect.height * 100))); $("#subtitlePosition").value = "custom"; applyCaptionStyle(); }
+positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
+positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
 let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys(profiles)[0];
 function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); }
 function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
-function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
 $("#renameProfile").onclick = () => {

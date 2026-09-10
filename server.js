@@ -110,9 +110,12 @@ const assEscape = (text) =>
     .replaceAll("}", "\\}")
     .replace(/\r?\n/g, "\\N");
 function createAss(scenes, settings) {
-  const position = { bottom: [2, 70], middle: [5, 20], top: [8, 70] }[
-      settings.subtitlePosition
-    ] || [2, 70],
+  const positionPresets = { "top-left": [18,15], top: [50,15], "top-right": [82,15], "middle-left": [18,50], middle: [50,50], "middle-right": [82,50], "bottom-left": [18,85], bottom: [50,85], "bottom-right": [82,85] },
+    preset = positionPresets[settings.subtitlePosition] || positionPresets.bottom,
+    xPercent = Math.min(95, Math.max(5, Number(settings.subtitleX ?? preset[0]))),
+    yPercent = Math.min(95, Math.max(5, Number(settings.subtitleY ?? preset[1]))),
+    subtitleX = Math.round(1920 * xPercent / 100),
+    subtitleY = Math.round(1080 * yPercent / 100),
     font = String(settings.fontFamily || "Arial").replaceAll(",", ""),
     sizePercent = Math.min(220, Math.max(40, Number(settings.fontSizePercent) || 100)),
     size = Math.round(56 * sizePercent / 100),
@@ -126,12 +129,13 @@ function createAss(scenes, settings) {
     outlineSize = Math.max(0, Number(settings.outlineSize) || 2);
   const events = scenes
     .map((scene) => {
-      let text = assEscape(scene.text);
+      const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
+      let text = `${placement}${content}`;
       if (settings.textEffect === "fade") text = `{\\fad(250,180)}${text}`;
       if (settings.textEffect === "pop")
         text = `{\\fscx70\\fscy70\\t(0,250,\\fscx100\\fscy100)}${text}`;
       if (settings.textEffect === "karaoke") {
-        const words = text.split(/\s+/),
+        const words = content.split(/\s+/),
           centis = Math.max(
             1,
             Math.round(
@@ -139,13 +143,12 @@ function createAss(scenes, settings) {
                 Math.max(1, words.length),
             ),
           );
-        text = words.map((word) => `{\\k${centis}}${word}`).join(" ");
+        text = `${placement}${words.map((word) => `{\\k${centis}}${word}`).join(" ")}`;
       }
       if (settings.textEffect === "typewriter") {
-        const characters = [...text], centis = Math.max(1, Math.round(((Number(scene.end) - Number(scene.start)) * 100) / Math.max(1, characters.length)));
-        text = characters.map((character) => `{\\k${centis}}${character}`).join("");
+        const characters = [...content], centis = Math.max(1, Math.round(((Number(scene.end) - Number(scene.start)) * 100) / Math.max(1, characters.length)));
+        text = `${placement}${characters.map((character) => `{\\k${centis}}${character}`).join("")}`;
       }
-      if (settings.textEffect === "slide-up") text = `{\\move(960,1160,960,900,0,350)\\fad(120,100)}${text}`;
       if (settings.textEffect === "zoom-in") text = `{\\fscx35\\fscy35\\t(0,320,\\fscx100\\fscy100)}${text}`;
       if (settings.textEffect === "bounce") text = `{\\fscx55\\fscy55\\t(0,180,\\fscx120\\fscy120)\\t(180,360,\\fscx100\\fscy100)}${text}`;
       if (settings.textEffect === "glow") text = `{\\blur3\\bord5\\3c${accent}}${text}`;
@@ -155,7 +158,7 @@ function createAss(scenes, settings) {
     .join("\n");
   const end = assTime(Math.max(...scenes.map((scene) => Number(scene.end) || 0)));
   const title = settings.persistentTitle && settings.titleLine1 ? `\nDialogue: 1,0:00:00.00,${end},Title,,0,0,0,,${assEscape([settings.titleLine1, settings.titleLine2].filter(Boolean).join("\n"))}` : "";
-  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${font},${size},${primary},${accent},${outline},&H${alpha}000000,${bold},${italic},0,0,100,100,${spacing},0,3,${outlineSize},1,${position[0]},90,90,${position[1]},1\nStyle: Title,${font},62,${accent},${primary},${outline},&H50000000,-1,0,0,0,100,100,1,0,3,3,2,9,60,60,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events}${title}\n`;
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${font},${size},${primary},${accent},${outline},&H${alpha}000000,${bold},${italic},0,0,100,100,${spacing},0,3,${outlineSize},1,5,90,90,20,1\nStyle: Title,${font},62,${accent},${primary},${outline},&H50000000,-1,0,0,0,100,100,1,0,3,3,2,9,60,60,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events}${title}\n`;
 }
 const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
