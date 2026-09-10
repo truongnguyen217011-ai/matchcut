@@ -447,62 +447,43 @@ app.post(
     }
   },
 );
+let transcriptionQueue = Promise.resolve();
+function enqueueTranscription(task) {
+  const result = transcriptionQueue.then(task, task);
+  transcriptionQueue = result.catch(() => undefined);
+  return result;
+}
 app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Chưa có file voice." });
-  const wavPath = `${req.file.path}.wav`;
+  const chunkDir = `${req.file.path}-chunks`, segmentSeconds = 300;
   try {
-    await run([
-      "-y",
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-i",
-      req.file.path,
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "-c:a",
-      "pcm_s16le",
-      wavPath,
-    ]);
-    const wav = new wavefile.WaveFile(await readFile(wavPath));
-    wav.toBitDepth("32f");
-    wav.toSampleRate(16000);
-    let samples = wav.getSamples();
-    if (Array.isArray(samples)) samples = samples[0];
-    const transcriber = await getWhisper();
-    const language = req.body.language;
-    const options = {
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5,
-    };
-    if (language && language !== "auto") options.language = language;
-    const output = await transcriber(samples, options);
-    res.json({
-      language: language || "auto",
-      text: output.text || "",
-      chunks: (output.chunks || [])
-        .map((c) => ({
-          text: c.text.trim(),
-          start: Number(c.timestamp?.[0] || 0),
-          end: Number(c.timestamp?.[1] || c.timestamp?.[0] || 0),
-        }))
-        .filter((c) => c.text && c.end > c.start),
+    const result = await enqueueTranscription(async () => {
+      await mkdir(chunkDir, { recursive: true });
+      await run(["-y", "-hide_banner", "-loglevel", "error", "-i", req.file.path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment", "-segment_time", String(segmentSeconds), "-reset_timestamps", "1", path.join(chunkDir, "part-%04d.wav")]);
+      const chunkFiles = (await readdir(chunkDir)).filter((name) => name.endsWith(".wav")).sort();
+      if (!chunkFiles.length) throw new Error("FFmpeg không tách được voice thành các đoạn xử lý.");
+      const transcriber = await getWhisper(), language = req.body.language, allChunks = [], texts = [];
+      for (let index = 0; index < chunkFiles.length; index++) {
+        const wav = new wavefile.WaveFile(await readFile(path.join(chunkDir, chunkFiles[index])));
+        wav.toBitDepth("32f"); wav.toSampleRate(16000);
+        let samples = wav.getSamples(); if (Array.isArray(samples)) samples = samples[0];
+        const options = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+        if (language && language !== "auto") options.language = language;
+        const output = await transcriber(samples, options), offset = index * segmentSeconds;
+        if (output.text?.trim()) texts.push(output.text.trim());
+        for (const chunk of output.chunks || []) {
+          const start = offset + Number(chunk.timestamp?.[0] || 0), end = offset + Number(chunk.timestamp?.[1] ?? chunk.timestamp?.[0] ?? 0);
+          if (chunk.text?.trim() && end > start) allChunks.push({ text: chunk.text.trim(), start, end });
+        }
+      }
+      return { language: language || "auto", text: texts.join(" "), chunks: allChunks, audioParts: chunkFiles.length };
     });
+    res.json(result);
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Whisper không thể nhận dạng voice.",
-      });
+    res.status(500).json({ error: error instanceof Error ? error.message : "Whisper không thể nhận dạng voice." });
   } finally {
     void rm(req.file.path, { force: true });
-    void rm(wavPath, { force: true });
+    void rm(chunkDir, { recursive: true, force: true });
   }
 });
 app.get("/api/health", (_req, res) => res.json({ ok: true, engine: "FFmpeg" }));
