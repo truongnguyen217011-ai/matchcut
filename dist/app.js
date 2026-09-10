@@ -18,6 +18,21 @@ const fmt = (n) =>
     .padStart(2, "0")}:${Math.floor(n % 60)
     .toString()
     .padStart(2, "0")}`;
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+async function fetchWithRetry(url, options, label, retries = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try { return await fetch(url, options); }
+    catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      const delay = attempt * 3000;
+      batchLog?.(`Mất kết nối khi ${label}. Tự thử lại lần ${attempt + 1}/${retries} sau ${delay / 1000} giây…`);
+      await wait(delay);
+    }
+  }
+  throw new Error(`${label}: không kết nối được máy chủ sau ${retries} lần thử. Hãy giữ cửa sổ máy chủ đang chạy rồi bấm chạy lại. (${lastError?.message || "lỗi mạng"})`);
+}
 function effectSettings() {
   return {
     fontFamily: $("#fontFamily").value,
@@ -626,7 +641,7 @@ $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu
 async function processBatchItem(item) {
   item.status = "Tạo timestamp"; renderBatchList(); batchLog(`Đang nhận dạng: ${item.file.name}`);
   const transcribeForm = new FormData(); transcribeForm.append("voice", item.file); transcribeForm.append("language", $("#language").value);
-  const transcribeResponse = await fetch("/api/transcribe", { method: "POST", body: transcribeForm });
+  const transcribeResponse = await fetchWithRetry("/api/transcribe", { method: "POST", body: transcribeForm }, `nhận dạng ${item.file.name}`);
   const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Whisper thất bại");
   const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice");
   item.status = "Đang render"; renderBatchList(); batchLog(`Đang render ${chunks.length} cảnh: ${item.file.name}`);
@@ -637,7 +652,7 @@ async function processBatchItem(item) {
   const compact = appendUsedMedia(renderForm, batchScenes);
   renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaPath:scene.media.localPath || null, mediaType:scene.media.type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
-  const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
+  const renderResponse = await fetchWithRetry("/api/render", { method:"POST", body:renderForm }, `render ${item.file.name}`); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
   item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName}${result.overlayImage ? ` · Lớp phủ: ${result.overlayImage}` : ""} → ${result.savedPath}`);
 }
 async function runBatch(items) { if (batchRunning) return; if (!assets.length) { batchLog("Thiếu kho tư liệu. Hãy thêm ảnh/video trước khi chạy."); return; } batchRunning = true; batchStopRequested = false; updateBatchButtons(); for (const item of items) { if (batchStopRequested) break; try { await processBatchItem(item); } catch (error) { item.status = "Lỗi"; renderBatchList(); batchLog(`✕ ${item.file.name}: ${error.message}`); } } batchRunning = false; updateBatchButtons(); batchLog(batchStopRequested ? "Đã dừng hàng đợi." : "Đã xử lý xong hàng đợi."); }
