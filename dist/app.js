@@ -17,6 +17,30 @@ const fmt = (n) =>
     .padStart(2, "0")}:${Math.floor(n % 60)
     .toString()
     .padStart(2, "0")}`;
+function effectSettings() {
+  return {
+    fontFamily: $("#fontFamily").value,
+    fontSize: Number($("#fontSize").value),
+    textEffect: $("#textEffect").value,
+    transition: $("#transition").value,
+    fontColor: $("#fontColor").value,
+    accentColor: $("#accentColor").value,
+    subtitlePosition: $("#subtitlePosition").value,
+    subtitleEnabled: $("#subtitleEnabled").checked,
+  };
+}
+function applyCaptionStyle() {
+  const s = effectSettings();
+  caption.className = `caption fx-${s.textEffect} pos-${s.subtitlePosition}`;
+  caption.style.fontFamily = s.fontFamily;
+  caption.style.fontSize = `${Math.max(12, Math.round(s.fontSize / 3))}px`;
+  caption.style.color = s.fontColor;
+  caption.style.setProperty("--accent", s.accentColor);
+  caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
+}
+document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
+  control.addEventListener("input", applyCaptionStyle),
+);
 function ready() {
   const missing = [];
   if (!audio.src) missing.push("voice");
@@ -204,7 +228,7 @@ function showScene(s) {
     canvas.prepend(el);
   }
   caption.textContent = s.text || "";
-  caption.style.display = "block";
+  applyCaptionStyle();
   if (!timeline.querySelector(`.scene[data-id="${s.id}"]`))
     renderTimeline(s.id);
   timeline
@@ -322,6 +346,7 @@ async function renderVideo() {
       })),
     ),
   );
+  form.append("settings", JSON.stringify(effectSettings()));
   try {
     const response = await fetch("/api/render", { method: "POST", body: form }),
       data = await response.json();

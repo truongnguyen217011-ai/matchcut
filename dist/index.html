@@ -22,9 +22,20 @@
       <div class="title"><span>03</span><div><h2>Kho tư liệu</h2><p>Chọn nhiều ảnh hoặc video</p></div></div>
       <label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Thêm ảnh / video <em id="mediaCount">0 file</em></label>
       <div id="mediaStrip" class="media-strip"></div>
+      <div class="title"><span>04</span><div><h2>Hiệu ứng & phụ đề</h2><p>Áp dụng cho preview và video xuất</p></div></div>
+      <div class="effect-grid">
+        <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Georgia</option></select></label>
+        <label>Cỡ chữ<select id="fontSize"><option value="42">Nhỏ</option><option value="56" selected>Vừa</option><option value="72">Lớn</option></select></label>
+        <label>Hiệu ứng chữ<select id="textEffect"><option value="none">Không</option><option value="fade">Fade</option><option value="pop" selected>Pop</option><option value="karaoke">Karaoke</option></select></label>
+        <label>Chuyển cảnh<select id="transition"><option value="none">Cắt thẳng</option><option value="fade" selected>Fade</option><option value="zoom">Zoom nhẹ</option><option value="slide">Trượt ngang</option></select></label>
+        <label>Màu chữ<input id="fontColor" type="color" value="#ffffff"></label>
+        <label>Màu nhấn<input id="accentColor" type="color" value="#2af0a8"></label>
+        <label class="wide">Vị trí<select id="subtitlePosition"><option value="bottom" selected>Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
+        <label class="check wide"><input id="subtitleEnabled" type="checkbox" checked> Gắn phụ đề vào video xuất</label>
+      </div>
       <button id="matchBtn" class="primary"><span>✦</span>Tự động ghép khớp lời</button>
       <div id="matchStatus" class="match-status">Cần voice, lời thoại và ít nhất một ảnh/video.</div>
-      <div class="title export-title"><span>04</span><div><h2>Xuất video</h2><p>Chỉ render khi bạn bấm nút</p></div></div>
+      <div class="title export-title"><span>05</span><div><h2>Xuất video</h2><p>Chỉ render khi bạn bấm nút</p></div></div>
       <div class="export-card"><div><small>Thư mục lưu</small><strong>C:\MatchCut\Exports</strong></div><div><small>Tên video</small><strong id="outputName">Lấy theo tên file âm thanh.mp4</strong></div><button id="exportBtn" class="render" disabled>● Render và lưu MP4 bằng FFmpeg</button></div>
       <div id="renderStatus" class="render-status"></div>
     </section>
