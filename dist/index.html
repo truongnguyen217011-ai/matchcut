@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v4.3</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v4.4</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -73,6 +73,7 @@
           <label>Overlay / Subscribe<input id="overlayInput" type="file" accept="video/*"></label><label>Watermark PNG<input id="watermarkInput" type="file" accept="image/png"></label>
           <label class="check"><input id="chromaKey" type="checkbox"> Xóa phông xanh overlay</label><label>Độ trong watermark<input id="watermarkOpacity" type="range" min="0" max="100" value="70"></label>
           <label class="check"><input id="watermarkRotate" type="checkbox"> Tự động xoay Watermark PNG</label><label>Tốc độ xoay <output id="watermarkRotationSpeedValue">12°/giây</output><input id="watermarkRotationSpeed" type="range" min="1" max="45" value="12"></label>
+          <div class="overlay-library wide"><label class="check"><input id="overlayImageEnabled" type="checkbox"> Bật kho ảnh lớp phủ tự động</label><label class="wide">Folder ảnh lớp phủ PNG/WebP<div class="path-picker"><input id="overlayImageFolder" readonly placeholder="Chưa chọn folder lớp phủ"><button id="pickOverlayImageFolder" type="button">Chọn folder</button></div></label><label>Độ đậm lớp phủ <output id="overlayImageOpacityValue">70%</output><input id="overlayImageOpacity" type="range" min="5" max="100" value="70"></label><div id="overlayImageStatus">Mỗi video sẽ tự chọn ngẫu nhiên một ảnh lớp phủ khác trong folder.</div></div>
         </div></fieldset>
         <fieldset><legend>Âm thanh & sóng nhạc</legend><div class="file-grid">
           <label>Âm lượng voice<input id="voiceVolume" type="range" min="0" max="200" value="100"></label><label>Trễ voice (giây)<input id="voiceDelay" type="number" min="0" step="0.1" value="0"></label>

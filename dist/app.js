@@ -47,6 +47,9 @@ function effectSettings() {
     watermarkOpacity: Number($("#watermarkOpacity").value),
     watermarkRotate: $("#watermarkRotate").checked,
     watermarkRotationSpeed: Number($("#watermarkRotationSpeed").value),
+    overlayImageEnabled: $("#overlayImageEnabled").checked,
+    overlayImageFolder: $("#overlayImageFolder").value,
+    overlayImageOpacity: Number($("#overlayImageOpacity").value),
     voiceVolume: Number($("#voiceVolume").value),
     voiceDelay: Number($("#voiceDelay").value),
     musicVolume: Number($("#musicVolume").value),
@@ -72,6 +75,7 @@ function applyCaptionStyle() {
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
   $("#watermarkRotationSpeedValue").textContent = `${s.watermarkRotationSpeed}°/giây`;
+  $("#overlayImageOpacityValue").textContent = `${s.overlayImageOpacity}%`;
   canvas.querySelectorAll(":scope > img,:scope > video").forEach((media) => media.style.filter = `brightness(${100 - s.backgroundDarkness}%)`);
   $("#positionStage").style.setProperty("--preview-darkness", String(s.backgroundDarkness / 100));
   updatePositionPreview(s);
@@ -125,6 +129,7 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
   control.addEventListener("input", applyCaptionStyle),
 );
 $("#watermarkRotationSpeed").addEventListener("input", applyCaptionStyle);
+$("#overlayImageOpacity").addEventListener("input", applyCaptionStyle);
 const POSITION_PRESETS = {"top-left":[18,15],top:[50,15],"top-right":[82,15],"middle-left":[18,50],middle:[50,50],"middle-right":[82,50],"bottom-left":[18,85],bottom:[50,85],"bottom-right":[82,85]};
 function updatePositionPreview(s = effectSettings()) {
   $("#subtitleXValue").textContent = `${s.subtitleX}%`; $("#subtitleYValue").textContent = `${s.subtitleY}%`;
@@ -138,7 +143,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -270,6 +275,15 @@ $("#pickFolder").onclick = async () => {
     }
   } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
   finally { button.disabled = false; button.textContent = "▣ Chọn folder từ máy"; }
+};
+$("#pickOverlayImageFolder").onclick = async () => {
+  const button = $("#pickOverlayImageFolder"), status = $("#overlayImageStatus"); button.disabled = true; button.textContent = "Đang mở…"; status.textContent = "Hãy chọn folder chứa ảnh PNG/WebP trong cửa sổ Windows.";
+  try {
+    const response = await fetch("/api/pick-folder", { method: "POST" }), result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không mở được cửa sổ chọn folder");
+    if (result.folder) { $("#overlayImageFolder").value = result.folder; $("#overlayImageEnabled").checked = true; status.textContent = `Đã chọn: ${result.folder}. Mỗi video sẽ lấy ngẫu nhiên một ảnh lớp phủ.`; }
+  } catch (error) { status.textContent = `Lỗi: ${error.message}`; }
+  finally { button.disabled = false; button.textContent = "Chọn folder"; }
 };
 match.onclick = async () => {
   if (!ready()) {
@@ -600,7 +614,7 @@ async function processBatchItem(item) {
   renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaPath:scene.media.localPath || null, mediaType:scene.media.type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
   const renderResponse = await fetch("/api/render", { method:"POST", body:renderForm }); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
-  item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName} → ${result.savedPath}`);
+  item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName}${result.overlayImage ? ` · Lớp phủ: ${result.overlayImage}` : ""} → ${result.savedPath}`);
 }
 async function runBatch(items) { if (batchRunning) return; if (!assets.length) { batchLog("Thiếu kho tư liệu. Hãy thêm ảnh/video trước khi chạy."); return; } batchRunning = true; batchStopRequested = false; updateBatchButtons(); for (const item of items) { if (batchStopRequested) break; try { await processBatchItem(item); } catch (error) { item.status = "Lỗi"; renderBatchList(); batchLog(`✕ ${item.file.name}: ${error.message}`); } } batchRunning = false; updateBatchButtons(); batchLog(batchStopRequested ? "Đã dừng hàng đợi." : "Đã xử lý xong hàng đợi."); }
 $("#runSingle").onclick = () => { const item = batchFiles.find((entry) => entry.selected); if (item) void runBatch([item]); };

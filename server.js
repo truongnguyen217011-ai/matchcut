@@ -162,6 +162,19 @@ function createAss(scenes, settings) {
 }
 const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+const lastOverlaySelections = new Map();
+async function findOverlayImages(folder) {
+  const results = [], pending = [path.resolve(folder)];
+  while (pending.length) {
+    const current = pending.pop();
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(fullPath);
+      else if (entry.isFile() && [".png", ".webp"].includes(path.extname(entry.name).toLowerCase())) results.push(fullPath);
+    }
+  }
+  return results;
+}
 app.post("/api/pick-folder", async (_req, res) => {
   try {
     const script = "Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Width=1; $owner.Height=1; $owner.StartPosition='CenterScreen'; $owner.Show(); $owner.Activate(); $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description='Chọn thư mục tư liệu cho MatchCut'; $dialog.ShowNewFolderButton=$false; $result=$dialog.ShowDialog($owner); $owner.Close(); if($result -eq [System.Windows.Forms.DialogResult]::OK){[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath}";
@@ -222,6 +235,14 @@ app.post(
           .json({ error: "Thiếu voice, tư liệu hoặc timeline." });
       const segments = [];
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
+      let overlayImagePath = null;
+      if (settings.overlayImageEnabled && settings.overlayImageFolder) {
+        const overlayFiles = await findOverlayImages(settings.overlayImageFolder);
+        if (!overlayFiles.length) throw new Error("Folder ảnh lớp phủ không có file PNG hoặc WebP.");
+        const folderKey = path.resolve(settings.overlayImageFolder), previous = lastOverlaySelections.get(folderKey), choices = overlayFiles.length > 1 ? overlayFiles.filter((file) => file !== previous) : overlayFiles;
+        overlayImagePath = choices[Math.floor(Math.random() * choices.length)];
+        lastOverlaySelections.set(folderKey, overlayImagePath);
+      }
       const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
       let previousTransition = "";
       for (let i = 0; i < scenes.length; i++) {
@@ -350,7 +371,9 @@ app.post(
           "-i",
           audioSource,
         ];
-      if (watermark) inputArgs.push("-loop", "1", "-i", watermark.path);
+      let nextVideoInput = 2, overlayInputIndex = null, watermarkInputIndex = null;
+      if (overlayImagePath) { overlayInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", overlayImagePath); }
+      if (watermark) { watermarkInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", watermark.path); }
       let subtitleFilter = "";
       if (settings.subtitleEnabled !== false) {
         const assPath = path.join(dir, "captions.ass");
@@ -363,19 +386,30 @@ app.post(
         subtitleFilter = `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`;
       }
       const encodeArgs = [...inputArgs];
-      if (watermark) {
-        const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100,
-          speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),
-          rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "",
-          base = subtitleFilter ? `[0:v]${subtitleFilter}[base]` : "[0:v]null[base]",
-          filter = `${base};[2:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm];[base][wm]overlay=W-w-35:35:shortest=1[vout]`;
-        encodeArgs.push("-filter_complex", filter, "-map", "[vout]", "-map", "1:a:0");
+      const hasVisualLayers = overlayInputIndex !== null || watermarkInputIndex !== null;
+      if (hasVisualLayers) {
+        const filters = ["[0:v]null[vbase]"]; let current = "vbase", layerNumber = 0;
+        if (overlayInputIndex !== null) {
+          const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
+          filters.push(`[${overlayInputIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
+          filters.push(`[${current}][overlayimg]overlay=0:0:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
+        }
+        if (watermarkInputIndex !== null) {
+          const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100,
+            speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),
+            rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "";
+          filters.push(`[${watermarkInputIndex}:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm]`);
+          filters.push(`[${current}][wm]overlay=W-w-35:35:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
+        }
+        if (subtitleFilter) filters.push(`[${current}]${subtitleFilter}[vout]`);
+        else filters.push(`[${current}]null[vout]`);
+        encodeArgs.push("-filter_complex", filters.join(";"), "-map", "[vout]", "-map", "1:a:0");
       } else {
         if (subtitleFilter) encodeArgs.push("-vf", subtitleFilter);
         encodeArgs.push("-map", "0:v:0", "-map", "1:a:0");
       }
-      encodeArgs.push("-c:v", subtitleFilter || watermark ? "libx264" : "copy");
-      if (subtitleFilter || watermark) encodeArgs.push("-preset", "veryfast", "-crf", "20");
+      encodeArgs.push("-c:v", subtitleFilter || hasVisualLayers ? "libx264" : "copy");
+      if (subtitleFilter || hasVisualLayers) encodeArgs.push("-preset", "veryfast", "-crf", "20");
       encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", output);
       await run(encodeArgs);
       const savedPath = await availableExportPath(voice.originalname);
@@ -384,6 +418,7 @@ app.post(
         ok: true,
         savedPath,
         fileName: path.basename(savedPath),
+        overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
         settings,
       });
     } catch (error) {
