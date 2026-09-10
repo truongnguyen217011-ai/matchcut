@@ -60,6 +60,7 @@ function effectSettings() {
     voiceWaveformColor: $("#voiceWaveformColor").value,
     voiceWaveformY: Number($("#voiceWaveformY").value),
     waveformX: Number($("#waveformX").value),
+    voiceWaveformX: Number($("#voiceWaveformX").value),
     waveformWidth: Number($("#waveformWidth").value),
     waveformHeight: Number($("#waveformHeight").value),
     persistentTitle: $("#persistentTitle").checked,
@@ -139,10 +140,14 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
 $("#watermarkRotationSpeed").addEventListener("input", applyCaptionStyle);
 $("#overlayImageOpacity").addEventListener("input", applyCaptionStyle);
 function updateWaveformPreview(s = effectSettings()) {
-  $("#waveformYValue").textContent = `${s.waveformY}%`; $("#voiceWaveformYValue").textContent = `${s.voiceWaveformY}%`; $("#waveformXValue").textContent = `${s.waveformX}%`; $("#waveformWidthValue").textContent = `${s.waveformWidth}%`; $("#waveformHeightValue").textContent = `${s.waveformHeight}px`;
-  for (const [element,enabled,color,y] of [[$("#musicWavePreview"),s.waveformEnabled,s.waveformColor,s.waveformY],[$("#voiceWavePreview"),s.voiceWaveformEnabled,s.voiceWaveformColor,s.voiceWaveformY]]) { element.style.display = enabled ? "block" : "none"; element.style.setProperty("--wave-color",color); element.style.left = `${s.waveformX}%`; element.style.top = `${y}%`; element.style.width = `${s.waveformWidth}%`; element.style.height = `${Math.max(8,s.waveformHeight / 8)}px`; }
+  $("#waveformYValue").textContent = `${s.waveformY}%`; $("#voiceWaveformYValue").textContent = `${s.voiceWaveformY}%`; $("#waveformXValue").textContent = `${s.waveformX}%`; $("#voiceWaveformXValue").textContent = `${s.voiceWaveformX}%`; $("#waveformWidthValue").textContent = `${s.waveformWidth}%`; $("#waveformHeightValue").textContent = `${s.waveformHeight}px`;
+  for (const [element,enabled,color,x,y] of [[$("#musicWavePreview"),s.waveformEnabled,s.waveformColor,s.waveformX,s.waveformY],[$("#voiceWavePreview"),s.voiceWaveformEnabled,s.voiceWaveformColor,s.voiceWaveformX,s.voiceWaveformY]]) { element.style.display = enabled ? "block" : "none"; element.style.setProperty("--wave-color",color); element.style.left = `${x}%`; element.style.top = `${y}%`; element.style.width = `${s.waveformWidth}%`; element.style.height = `${Math.max(8,s.waveformHeight / 8)}px`; }
 }
-document.querySelectorAll("#waveformEnabled,#waveformColor,#waveformY,#voiceWaveformEnabled,#voiceWaveformColor,#voiceWaveformY,#waveformX,#waveformWidth,#waveformHeight").forEach((control) => control.addEventListener("input", applyCaptionStyle));
+document.querySelectorAll("#waveformEnabled,#waveformColor,#waveformY,#voiceWaveformEnabled,#voiceWaveformColor,#voiceWaveformY,#waveformX,#voiceWaveformX,#waveformWidth,#waveformHeight").forEach((control) => control.addEventListener("input", applyCaptionStyle));
+const waveformPreview = $("#waveformPreview"); let draggedWave = null;
+function moveWave(event) { if (!draggedWave) return; const rect = waveformPreview.getBoundingClientRect(), x = Math.round(Math.max(5,Math.min(95,(event.clientX-rect.left)/rect.width*100))), y = Math.round(Math.max(5,Math.min(95,(event.clientY-rect.top)/rect.height*100))), prefix = draggedWave === "music" ? "waveform" : "voiceWaveform"; $("#"+prefix+"X").value=x; $("#"+prefix+"Y").value=y; applyCaptionStyle(); }
+waveformPreview.addEventListener("pointerdown", (event) => { draggedWave = event.target.dataset.wave || ($("#waveformEnabled").checked ? "music" : "voice"); waveformPreview.setPointerCapture(event.pointerId); moveWave(event); });
+waveformPreview.addEventListener("pointermove", (event) => { if (waveformPreview.hasPointerCapture(event.pointerId)) moveWave(event); }); waveformPreview.addEventListener("pointerup", () => { draggedWave=null; });
 const POSITION_PRESETS = {"top-left":[18,15],top:[50,15],"top-right":[82,15],"middle-left":[18,50],middle:[50,50],"middle-right":[82,50],"bottom-left":[18,85],bottom:[50,85],"bottom-right":[82,85]};
 function updatePositionPreview(s = effectSettings()) {
   $("#subtitleXValue").textContent = `${s.subtitleX}%`; $("#subtitleYValue").textContent = `${s.subtitleY}%`;
@@ -156,7 +161,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
