@@ -65,6 +65,23 @@ function applyCaptionStyle() {
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
+const PROFILE_KEY = "matchcut.channelProfiles.v2";
+const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition"];
+let profiles = {};
+try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
+if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
+let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys(profiles)[0];
+function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); }
+function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
+function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
+$("#profileSelect").onchange = (event) => loadProfile(event.target.value);
+$("#saveProfile").onclick = () => { const name = $("#profileName").value.trim() || "Kênh chưa đặt tên"; profiles[activeProfile] = { ...snapshotProfile(), profileName: name }; persistProfiles(); renderProfileSelect(); $("#profileStatus").textContent = `Đã lưu cấu hình “${name}” trên máy.`; };
+$("#newProfile").onclick = () => { activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...snapshotProfile(), profileName: `Kênh ${Object.keys(profiles).length + 1}` }; loadProfile(activeProfile); $("#profileName").focus(); $("#profileName").select(); };
+$("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
+$("#deleteProfile").onclick = () => { if (Object.keys(profiles).length === 1) { $("#profileStatus").textContent = "Phải giữ lại ít nhất một cấu hình kênh."; return; } const oldName = profiles[activeProfile]?.profileName; delete profiles[activeProfile]; activeProfile = Object.keys(profiles)[0]; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); $("#profileStatus").textContent = `Đã xóa “${oldName}”.`; };
+renderProfileSelect();
+loadProfile(activeProfile);
 function ready() {
   const missing = [];
   if (!audio.src) missing.push("voice");
