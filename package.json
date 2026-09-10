@@ -1,1 +1,1 @@
-{"name":"matchcut-ffmpeg","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{"express":"^5.1.0","ffmpeg-static":"^5.2.0","multer":"^2.0.2"}}
+{"name":"matchcut-ffmpeg","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{"@huggingface/transformers":"^3.8.1","express":"^5.1.0","ffmpeg-static":"^5.2.0","multer":"^2.0.2","wavefile":"^11.0.0"}}

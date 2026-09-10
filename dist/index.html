@@ -14,6 +14,8 @@
     <section class="setup panel">
       <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
       <label class="drop" id="voiceDrop"><input id="voiceInput" type="file" accept="audio/*"><b>♫</b><strong id="voiceLabel">Chọn file voice</strong><small>Âm thanh không được tải lên máy chủ</small></label>
+      <button id="whisperBtn" class="whisper" disabled>◉ Tạo timestamp tự động bằng Whisper</button>
+      <div id="whisperStatus" class="whisper-status"></div>
       <audio id="audio"></audio>
       <div class="title"><span>02</span><div><h2>Lời thoại</h2><p>Mỗi câu sẽ thành một cảnh</p></div></div>
       <textarea id="script" rows="8" placeholder="Dán toàn bộ lời thuyết minh vào đây…"></textarea>
