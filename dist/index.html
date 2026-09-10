@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.3</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.4</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -21,7 +21,7 @@
     <section class="setup panel">
       <div class="auto-pipeline-data"><label id="voiceDrop"><strong id="voiceLabel">Chưa chọn voice</strong></label><button id="whisperBtn" disabled></button><div id="whisperStatus"></div><audio id="audio"></audio><textarea id="script"></textarea></div>
       <div class="title"><span>01</span><div><h2>Kho tư liệu</h2><p>Dùng chung cho toàn bộ dây chuyền</p></div></div>
-      <div class="folder-console"><textarea id="folderPaths" rows="3" placeholder="Dán đường dẫn thư mục, mỗi dòng một folder. Ví dụ:&#10;D:\TAI NGUYEN\Ocean&#10;G:\Shared drives\SON SAY MEDIA\Footage"></textarea><button id="addFolders" type="button">▣ Thêm các folder vào kho</button></div>
+      <div class="folder-console"><textarea id="folderPaths" rows="3" placeholder="Các folder đã chọn sẽ xuất hiện ở đây. Bạn cũng có thể dán nhiều đường dẫn, mỗi dòng một folder."></textarea><div class="folder-buttons"><button id="pickFolder" type="button">▣ Chọn folder từ máy</button><button id="addFolders" type="button">↻ Quét các đường dẫn</button></div></div>
       <div id="folderList" class="folder-list">Chưa có thư mục cục bộ.</div>
       <div class="media-source-actions"><label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Thêm file lẻ <em id="mediaCount">0 file</em></label></div>
       <div class="media-mode"><label>Cách chọn tư liệu cho từng cảnh<select id="mediaSelectionMode"><option value="sequential">Tuần tự giữa các folder</option><option value="random" selected>Ngẫu nhiên từ toàn bộ folder</option><option value="shuffle">Ngẫu nhiên, không lặp liên tiếp</option></select></label></div>

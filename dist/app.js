@@ -162,9 +162,9 @@ function addMediaFiles(files) {
   updateBatchButtons();
 }
 mediaInput.onchange = () => addMediaFiles(mediaInput.files);
-$("#addFolders").onclick = async () => {
+async function scanFolders() {
   const folders = $("#folderPaths").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-  if (!folders.length) return;
+  if (!folders.length) { $("#folderList").textContent = "Hãy chọn folder hoặc dán ít nhất một đường dẫn."; return; }
   $("#folderList").textContent = "Đang quét trực tiếp trên ổ đĩa…";
   try {
     const response = await fetch("/api/media-folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folders }) });
@@ -177,6 +177,21 @@ $("#addFolders").onclick = async () => {
     $("#mediaStrip").innerHTML = `<div class="media-summary">Kho cục bộ sẵn sàng: ${result.files.length.toLocaleString("vi-VN")} file · FFmpeg sẽ đọc trực tiếp khi render</div>`;
     ready(); updateBatchButtons();
   } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
+}
+$("#addFolders").onclick = scanFolders;
+$("#pickFolder").onclick = async () => {
+  const button = $("#pickFolder"); button.disabled = true; button.textContent = "Đang mở cửa sổ chọn folder…";
+  try {
+    const response = await fetch("/api/pick-folder", { method: "POST" }), result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không mở được cửa sổ chọn folder");
+    if (result.folder) {
+      const paths = $("#folderPaths"), current = paths.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+      if (!current.includes(result.folder)) current.push(result.folder);
+      paths.value = current.join("\n");
+      await scanFolders();
+    }
+  } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
+  finally { button.disabled = false; button.textContent = "▣ Chọn folder từ máy"; }
 };
 match.onclick = async () => {
   if (!ready()) {
