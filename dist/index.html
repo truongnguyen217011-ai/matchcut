@@ -9,20 +9,21 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Video Production Console · v2.5</span></div></div><div class="status"><i></i>FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v3.0</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <section class="batch-panel panel machine-panel">
+    <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
+    <div class="batch-layout">
+      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Thêm các file voice để bắt đầu dây chuyền tự động.</div></div><div class="batch-actions"><label class="batch-add"><input id="voiceInput" type="file" accept="audio/*" multiple>＋ Thêm file âm thanh</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
+      <div class="batch-progress"><div class="progress-title">Tiến trình tự động <span id="batchCounter">0/0</span></div><pre id="batchLog">Sẵn sàng. Thiết lập kênh và footage, sau đó thêm voice để xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
+    </div>
+  </section>
   <main>
     <section class="setup panel">
-      <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
-      <label class="drop" id="voiceDrop"><input id="voiceInput" type="file" accept="audio/*" multiple><b>♫</b><strong id="voiceLabel">Chọn một hoặc nhiều file voice</strong><small>Một file để viết đơn · nhiều file tự vào hàng đợi</small></label>
-      <button id="whisperBtn" class="whisper" disabled>◉ Tạo timestamp tự động bằng Whisper</button>
-      <div id="whisperStatus" class="whisper-status"></div>
-      <audio id="audio"></audio>
-      <div class="title"><span>02</span><div><h2>Lời thoại</h2><p>Mỗi câu sẽ thành một cảnh</p></div></div>
-      <textarea id="script" rows="8" placeholder="Dán toàn bộ lời thuyết minh vào đây…"></textarea>
-      <div class="title"><span>03</span><div><h2>Kho tư liệu</h2><p>Chọn nhiều ảnh hoặc video</p></div></div>
+      <div class="auto-pipeline-data"><label id="voiceDrop"><strong id="voiceLabel">Chưa chọn voice</strong></label><button id="whisperBtn" disabled></button><div id="whisperStatus"></div><audio id="audio"></audio><textarea id="script"></textarea></div>
+      <div class="title"><span>01</span><div><h2>Kho tư liệu</h2><p>Dùng chung cho toàn bộ dây chuyền</p></div></div>
       <label class="media-add"><input id="mediaInput" type="file" accept="image/*,video/*" multiple><span>＋</span> Thêm ảnh / video <em id="mediaCount">0 file</em></label>
       <div id="mediaStrip" class="media-strip"></div>
-      <div class="title"><span>04</span><div><h2>Cấu hình sản xuất</h2><p>Một bảng duy nhất cho kênh, hình, chữ và âm thanh</p></div></div>
+      <div class="title"><span>02</span><div><h2>Cấu hình sản xuất</h2><p>Thiết lập một lần và lưu theo từng kênh</p></div></div>
       <details class="advanced" open><summary>Thiết lập video</summary>
         <fieldset><legend>Kênh & Footage</legend><div class="profile-toolbar"><select id="profileSelect"></select><button id="newProfile" type="button">＋ Mới</button><button id="saveProfile" type="button">▣ Lưu</button><button id="cloneProfile" type="button">⧉ Sao chép</button><button id="deleteProfile" type="button">⌫ Xóa</button></div><div id="profileStatus" class="profile-status"></div><div class="effect-grid">
           <label class="wide">Tên cấu hình<input id="profileName" value="Kênh mặc định"></label>
@@ -59,9 +60,9 @@
           <label>Hiệu ứng<select id="titleEffect"><option value="typewriter">Gõ máy</option><option value="glow">Sáng chạy</option><option value="fade">Fade</option></select></label><label>Vị trí<select id="titlePosition"><option value="bottom-right">Dưới phải</option><option value="top-right">Trên phải</option><option value="top-left">Trên trái</option></select></label>
         </div></fieldset>
       </details>
-      <button id="matchBtn" class="primary"><span>✦</span>Tự động ghép khớp lời</button>
+      <button id="matchBtn" class="primary manual-only"><span>✦</span>Tự động ghép khớp lời</button>
       <div id="matchStatus" class="match-status">Cần voice, lời thoại và ít nhất một ảnh/video.</div>
-      <div class="title export-title"><span>05</span><div><h2>Xuất video</h2><p>Chỉ render khi bạn bấm nút</p></div></div>
+      <div class="title export-title"><span>03</span><div><h2>Xuất file đang chọn</h2><p>Dùng khi cần render lại riêng một video</p></div></div>
       <div class="export-card"><div><small>Thư mục lưu</small><strong>C:\MatchCut\Exports</strong></div><div><small>Tên video</small><strong id="outputName">Lấy theo tên file âm thanh.mp4</strong></div><button id="exportBtn" class="render" disabled>● Render và lưu MP4 bằng FFmpeg</button></div>
       <div id="renderStatus" class="render-status"></div>
     </section>
@@ -72,13 +73,6 @@
       <div id="timeline" class="timeline"><div class="timeline-empty">Chưa có cảnh để hiển thị.</div></div>
     </section>
   </main>
-  <section class="batch-panel panel">
-    <div class="batch-head"><div><strong>Chạy file âm thanh (MP3/WAV/M4A)</strong><span>Dùng cấu hình kênh và kho tư liệu hiện tại</span></div><button id="clearBatch">Xóa hết</button></div>
-    <div class="batch-layout">
-      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Thêm voice ở bước 01 phía trên để tạo hàng đợi.</div></div><div class="batch-actions"><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button><span>Nhấp tên file để đưa lên trình biên tập</span></div></div>
-      <div class="batch-progress"><div class="progress-title">Tiến trình <span id="batchCounter">0/0</span></div><pre id="batchLog">Sẵn sàng. Hãy thêm các file voice cần xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
-    </div>
-  </section>
   <script src="./app.js"></script>
 </body>
 </html>
