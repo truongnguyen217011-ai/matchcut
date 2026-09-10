@@ -27,6 +27,30 @@ function effectSettings() {
     accentColor: $("#accentColor").value,
     subtitlePosition: $("#subtitlePosition").value,
     subtitleEnabled: $("#subtitleEnabled").checked,
+    profileName: $("#profileName").value,
+    aspectRatio: $("#aspectRatio").value,
+    language: $("#language").value,
+    poolMode: $("#poolMode").checked,
+    fontBold: $("#fontBold").checked,
+    fontItalic: $("#fontItalic").checked,
+    outlineSize: Number($("#outlineSize").value),
+    subtitleBg: Number($("#subtitleBg").value),
+    wordsPerCaption: Number($("#wordsPerCaption").value),
+    maxLines: Number($("#maxLines").value),
+    letterSpacing: Number($("#letterSpacing").value),
+    secondaryOutline: $("#secondaryOutline").value,
+    chromaKey: $("#chromaKey").checked,
+    watermarkOpacity: Number($("#watermarkOpacity").value),
+    voiceVolume: Number($("#voiceVolume").value),
+    voiceDelay: Number($("#voiceDelay").value),
+    musicVolume: Number($("#musicVolume").value),
+    waveformEnabled: $("#waveformEnabled").checked,
+    waveformPosition: $("#waveformPosition").value,
+    persistentTitle: $("#persistentTitle").checked,
+    titleLine1: $("#titleLine1").value,
+    titleLine2: $("#titleLine2").value,
+    titleEffect: $("#titleEffect").value,
+    titlePosition: $("#titlePosition").value,
   };
 }
 function applyCaptionStyle() {
@@ -334,6 +358,10 @@ async function renderVideo() {
   const form = new FormData();
   form.append("voice", voice.files[0]);
   assets.forEach((a) => form.append("media", a.file));
+  for (const [field, id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) {
+    const file = $(id).files[0];
+    if (file) form.append(field, file);
+  }
   form.append(
     "scenes",
     JSON.stringify(

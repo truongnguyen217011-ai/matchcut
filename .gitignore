@@ -1,4 +1,5 @@
 node_modules/
 jobs/
 test-exports/
+test-exports-advanced/
 *.tar.gz
