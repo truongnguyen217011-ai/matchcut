@@ -10,7 +10,8 @@ const audio = $("#audio"),
 let assets = [],
   scenes = [],
   whisperChunks = [],
-  timelineWindowStart = 0;
+  timelineWindowStart = 0,
+  activeVoiceFile = null;
 const fmt = (n) =>
   `${Math.floor(n / 60)
     .toString()
@@ -94,9 +95,9 @@ function ready() {
   status.classList.toggle("ready", !missing.length);
   return !missing.length;
 }
-voice.onchange = () => {
-  const f = voice.files[0];
+function setActiveVoice(f) {
   if (!f) return;
+  activeVoiceFile = f;
   audio.src = URL.createObjectURL(f);
   $("#voiceLabel").textContent = f.name;
   $("#outputName").textContent = `${f.name.replace(/\.[^.]+$/, "")}.mp4`;
@@ -105,6 +106,15 @@ voice.onchange = () => {
   whisperChunks = [];
   ready();
   updateBatchButtons();
+}
+voice.onchange = () => {
+  const incoming = [...voice.files];
+  for (const file of incoming) {
+    if (!batchFiles.some((item) => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) batchFiles.push({ file, selected: true, status: "Chờ chạy" });
+  }
+  setActiveVoice(incoming[0]);
+  renderBatchList();
+  if (incoming.length) batchLog(`Đã thêm ${incoming.length} voice từ bước 01.`);
 };
 script.oninput = () => {
   ready();
@@ -326,7 +336,7 @@ $("#whisperBtn").onclick = async () => {
   status.textContent =
     "Whisper đang nhận dạng voice. Lần đầu sẽ tải model khoảng 75 MB và có thể mất vài phút…";
   const form = new FormData();
-  form.append("voice", voice.files[0]);
+  form.append("voice", activeVoiceFile);
   try {
     const response = await fetch("/api/transcribe", {
         method: "POST",
@@ -348,7 +358,7 @@ $("#planBtn").onclick = () => {
   const data = {
       app: "MatchCut",
       version: 1,
-      voice: voice.files[0]?.name,
+      voice: activeVoiceFile?.name,
       duration: audio.duration,
       scenes: scenes.map((s) => ({
         id: s.id,
@@ -372,9 +382,9 @@ async function renderVideo() {
     status = $("#renderStatus");
   button.disabled = true;
   status.className = "render-status show";
-  status.textContent = `FFmpeg đang render. Video sẽ được lưu tại C:\\MatchCut\\Exports với tên “${voice.files[0]?.name.replace(/\.[^.]+$/, "")}.mp4”…`;
+  status.textContent = `FFmpeg đang render. Video sẽ được lưu tại C:\\MatchCut\\Exports với tên “${activeVoiceFile?.name.replace(/\.[^.]+$/, "")}.mp4”…`;
   const form = new FormData();
-  form.append("voice", voice.files[0]);
+  form.append("voice", activeVoiceFile);
   assets.forEach((a) => form.append("media", a.file));
   for (const [field, id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) {
     const file = $(id).files[0];
@@ -411,12 +421,12 @@ let batchFiles = [], batchRunning = false, batchStopRequested = false;
 const batchLog = (message) => { const box = $("#batchLog"); box.textContent += `\n[${new Date().toLocaleTimeString("vi-VN")}] ${message}`; box.scrollTop = box.scrollHeight; };
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><span>${item.file.name}</span><em>${item.status}</em></label>`).join("") : '<div class="batch-empty">Chưa có file âm thanh trong hàng đợi.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}">${item.file.name}</button><em>${item.status}</em></label>`).join("") : '<div class="batch-empty">Thêm voice ở bước 01 phía trên để tạo hàng đợi.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
+  list.querySelectorAll(".batch-open").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons();
 }
 function updateBatchButtons() { const count = batchFiles.filter((item) => item.selected).length; $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất").length}/${count}`; $("#runSingle").disabled = batchRunning || !count || !assets.length; $("#runBatch").disabled = batchRunning || !count || !assets.length; $("#stopBatch").disabled = !batchRunning; }
-$("#batchInput").onchange = (event) => { for (const file of event.target.files) batchFiles.push({ file, selected: true, status: "Chờ chạy" }); event.target.value = ""; renderBatchList(); batchLog(`Đã thêm ${batchFiles.length} file vào hàng đợi.`); };
 $("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
 $("#clearBatch").onclick = () => { if (batchRunning) return; batchFiles = []; renderBatchList(); batchLog("Đã làm trống hàng đợi."); };

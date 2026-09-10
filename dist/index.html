@@ -9,11 +9,11 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Video Production Console · v2.4</span></div></div><div class="status"><i></i>FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Video Production Console · v2.5</span></div></div><div class="status"><i></i>FFmpeg sẵn sàng</div></header>
   <main>
     <section class="setup panel">
       <div class="title"><span>01</span><div><h2>Voice thuyết minh</h2><p>MP3, WAV hoặc M4A</p></div></div>
-      <label class="drop" id="voiceDrop"><input id="voiceInput" type="file" accept="audio/*"><b>♫</b><strong id="voiceLabel">Chọn file voice</strong><small>Âm thanh không được tải lên máy chủ</small></label>
+      <label class="drop" id="voiceDrop"><input id="voiceInput" type="file" accept="audio/*" multiple><b>♫</b><strong id="voiceLabel">Chọn một hoặc nhiều file voice</strong><small>Một file để viết đơn · nhiều file tự vào hàng đợi</small></label>
       <button id="whisperBtn" class="whisper" disabled>◉ Tạo timestamp tự động bằng Whisper</button>
       <div id="whisperStatus" class="whisper-status"></div>
       <audio id="audio"></audio>
@@ -75,7 +75,7 @@
   <section class="batch-panel panel">
     <div class="batch-head"><div><strong>Chạy file âm thanh (MP3/WAV/M4A)</strong><span>Dùng cấu hình kênh và kho tư liệu hiện tại</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
-      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chưa có file âm thanh trong hàng đợi.</div></div><div class="batch-actions"><label><input id="batchInput" type="file" accept="audio/*" multiple>＋ Thêm file</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
+      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Thêm voice ở bước 01 phía trên để tạo hàng đợi.</div></div><div class="batch-actions"><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button><span>Nhấp tên file để đưa lên trình biên tập</span></div></div>
       <div class="batch-progress"><div class="progress-title">Tiến trình <span id="batchCounter">0/0</span></div><pre id="batchLog">Sẵn sàng. Hãy thêm các file voice cần xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
     </div>
   </section>
