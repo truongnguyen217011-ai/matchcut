@@ -38,6 +38,7 @@ function effectSettings() {
     fontItalic: $("#fontItalic").checked,
     outlineSize: Number($("#outlineSize").value),
     subtitleBg: Number($("#subtitleBg").value),
+    backgroundDarkness: Number($("#backgroundDarkness").value),
     wordsPerCaption: Number($("#wordsPerCaption").value),
     maxLines: Number($("#maxLines").value),
     letterSpacing: Number($("#letterSpacing").value),
@@ -67,6 +68,9 @@ function applyCaptionStyle() {
   caption.style.setProperty("--accent", s.accentColor);
   caption.style.left = `${s.subtitleX}%`; caption.style.right = "auto"; caption.style.top = `${s.subtitleY}%`; caption.style.bottom = "auto"; caption.style.width = "84%"; caption.style.transform = "translate(-50%,-50%)";
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
+  $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
+  canvas.querySelectorAll(":scope > img,:scope > video").forEach((media) => media.style.filter = `brightness(${100 - s.backgroundDarkness}%)`);
+  $("#positionStage").style.setProperty("--preview-darkness", String(s.backgroundDarkness / 100));
   updatePositionPreview(s);
   updateEffectInspector(s);
 }
@@ -130,7 +134,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };

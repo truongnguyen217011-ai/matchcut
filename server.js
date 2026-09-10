@@ -239,6 +239,8 @@ app.post(
         }
         previousTransition = transition;
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
+        const backgroundDarkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
+        if (backgroundDarkness > 0) vf += `,eq=brightness=${(-backgroundDarkness / 100).toFixed(2)}`;
         if (transition === "fade")
           vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
         if (transition === "cinematic-fade")
