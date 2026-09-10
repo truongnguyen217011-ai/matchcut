@@ -70,6 +70,7 @@ function effectSettings() {
     titlePosition: $("#titlePosition").value,
     mediaSelectionMode: $("#mediaSelectionMode").value,
     folderPaths: $("#folderPaths").value,
+    autoRenderOnMatch: $("#autoRenderOnMatch").checked,
   };
 }
 function applyCaptionStyle() {
@@ -161,7 +162,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -377,6 +378,11 @@ match.onclick = async () => {
         `Đã ghép ${scenes.length} cảnh. Bấm nút ▶ để xem preview.`;
     }
     $("#matchStatus").className = "match-status ready";
+    if ($("#autoRenderOnMatch").checked) {
+      $("#matchStatus").textContent = `Đã ghép ${scenes.length} cảnh. FFmpeg đang tự render và lưu MP4…`;
+      await renderVideo();
+      if ($("#renderStatus").classList.contains("success")) $("#matchStatus").textContent = `Hoàn tất ${scenes.length} cảnh và đã tự lưu MP4.`;
+    }
   } catch (error) {
     $("#matchStatus").textContent = `Không thể ghép: ${error.message}`;
   } finally {

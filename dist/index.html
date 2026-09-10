@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v4.6</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v4.7</span></div></div><div class="status"><i></i>Whisper + FFmpeg sẵn sàng</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice → Whisper → lời thoại & timestamp → ghép footage → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -90,9 +90,9 @@
           <label>Hiệu ứng<select id="titleEffect"><option value="typewriter">Gõ máy</option><option value="glow">Sáng chạy</option><option value="fade">Fade</option></select></label><label>Vị trí<select id="titlePosition"><option value="bottom-right">Dưới phải</option><option value="top-right">Trên phải</option><option value="top-left">Trên trái</option></select></label>
         </div></fieldset>
       </details>
-      <button id="matchBtn" class="primary manual-only"><span>✦</span>Tự động ghép khớp lời</button>
+      <label class="auto-render-toggle manual-only"><input id="autoRenderOnMatch" type="checkbox" checked><span><strong>Tự render và lưu MP4 sau khi ghép</strong><small>Không cần bấm Render thêm lần nữa · lưu tại C:\MatchCut\Exports</small></span></label><button id="matchBtn" class="primary manual-only"><span>✦</span>Tự động ghép khớp lời và render</button>
       <div id="matchStatus" class="match-status">Cần voice, lời thoại và ít nhất một ảnh/video.</div>
-      <div class="title export-title"><span>03</span><div><h2>Xuất file đang chọn</h2><p>Dùng khi cần render lại riêng một video</p></div></div>
+      <div class="title export-title"><span>03</span><div><h2>Render lại thủ công</h2><p>Chỉ dùng khi bạn đã chỉnh timeline và muốn xuất lại</p></div></div>
       <div class="export-card"><div><small>Thư mục lưu</small><strong>C:\MatchCut\Exports</strong></div><div><small>Tên video</small><strong id="outputName">Lấy theo tên file âm thanh.mp4</strong></div><button id="exportBtn" class="render" disabled>● Render và lưu MP4 bằng FFmpeg</button></div>
       <div id="renderStatus" class="render-status"></div>
     </section>
