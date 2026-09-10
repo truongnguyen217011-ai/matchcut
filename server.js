@@ -219,6 +219,8 @@ app.post(
           .json({ error: "Thiếu voice, tư liệu hoặc timeline." });
       const segments = [];
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
+      const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
+      let previousTransition = "";
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i],
           source = scene.mediaPath && allowedLocalMedia.has(path.resolve(scene.mediaPath)) ? path.resolve(scene.mediaPath) : media[scene.mediaIndex]?.path;
@@ -227,22 +229,40 @@ app.post(
         const out = path.join(dir, `scene-${String(i).padStart(4, "0")}.mp4`),
           duration = Math.max(0.5, Number(scene.end) - Number(scene.start)),
           common = ["-y", "-hide_banner", "-loglevel", "error"];
+        let transition = settings.transition || "none";
+        if (transition === "random") {
+          const choices = randomTransitions.filter((item) => item !== previousTransition);
+          transition = choices[Math.floor(Math.random() * choices.length)];
+        }
+        previousTransition = transition;
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
-        if (settings.transition === "fade")
+        if (transition === "fade")
           vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
-        if (settings.transition === "zoom-in" && scene.mediaType === "image")
+        if (transition === "cinematic-fade")
+          vf += `,eq=contrast=1.08:saturation=0.92,fade=t=in:st=0:d=${Math.min(0.7, duration / 3).toFixed(2)}:color=black`;
+        if (transition === "zoom-in" && scene.mediaType === "image")
           vf += `,zoompan=z='min(zoom+0.0008,1.08)':d=1:s=${width}x${height}:fps=30`;
-        if (settings.transition === "zoom-out" && scene.mediaType === "image")
+        if (transition === "zoom-out" && scene.mediaType === "image")
           vf += `,zoompan=z='if(eq(on,1),1.08,max(zoom-0.0008,1.0))':d=1:s=${width}x${height}:fps=30`;
-        if (settings.transition === "slide-left")
+        if (transition === "cross-zoom" && scene.mediaType === "image")
+          vf += `,zoompan=z='if(lt(on,14),1.32-0.02*on,1.04)':d=1:s=${width}x${height}:fps=30,fade=t=in:st=0:d=${Math.min(0.2, duration / 4).toFixed(2)}`;
+        if (transition === "slide-left")
           vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*(1-min(t/${duration.toFixed(3)},1))':y=22`;
-        if (settings.transition === "slide-right")
+        if (transition === "slide-right")
           vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*min(t/${duration.toFixed(3)},1)':y=22`;
-        if (settings.transition === "pan-up")
+        if (transition === "pan-up")
           vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*(1-min(t/${duration.toFixed(3)},1))'`;
-        if (settings.transition === "pan-down")
+        if (transition === "pan-down")
           vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*min(t/${duration.toFixed(3)},1)'`;
-        if (settings.transition === "flash")
+        if (transition === "diagonal-up")
+          vf += `,scale=${width + 80}:${height + 80},crop=${width}:${height}:x='80*(1-min(t/${duration.toFixed(3)},1))':y='80*(1-min(t/${duration.toFixed(3)},1))'`;
+        if (transition === "diagonal-down")
+          vf += `,scale=${width + 80}:${height + 80},crop=${width}:${height}:x='80*min(t/${duration.toFixed(3)},1)':y='80*min(t/${duration.toFixed(3)},1)'`;
+        if (transition === "rotate-in")
+          vf += `,rotate='0.10*(1-min(t/0.55,1))':ow=iw:oh=ih:fillcolor=black`;
+        if (transition === "shake-cut")
+          vf += `,scale=${width + 80}:${height + 50},crop=${width}:${height}:x='40+18*sin(35*t)*max(0,1-t/0.5)':y='25+12*cos(31*t)*max(0,1-t/0.5)'`;
+        if (transition === "flash")
           vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
         vf += ",format=yuv420p";
         if (scene.mediaType === "image")

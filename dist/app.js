@@ -79,14 +79,21 @@ const TEXT_EFFECT_INFO = {
   shake: ["Rung nhấn mạnh", "Chữ rung ngắn khi xuất hiện để nhấn câu quan trọng."],
 };
 const TRANSITION_INFO = {
+  random: ["Random thông minh", "Mỗi cảnh tự chọn một hiệu ứng khác và tránh lặp kiểu vừa dùng."],
   none: ["Cắt thẳng", "Đổi cảnh tức thì, nhanh và dứt khoát."],
   fade: ["Mờ dần", "Cảnh mới hiện dần từ nền tối."],
+  "cinematic-fade": ["Fade điện ảnh", "Mở cảnh chậm từ màu đen với độ tương phản điện ảnh."],
   "zoom-in": ["Zoom tiến", "Ảnh tiến chậm vào chủ thể theo phong cách Ken Burns."],
   "zoom-out": ["Zoom lùi", "Ảnh lùi chậm để dần hé lộ toàn bộ khung cảnh."],
+  "cross-zoom": ["Cross Zoom mạnh", "Khung hình lao nhanh vào tâm rồi ổn định, phù hợp điểm chuyển cao trào."],
   "slide-left": ["Trượt sang trái", "Khung hình dịch chuyển từ phải sang trái."],
   "slide-right": ["Trượt sang phải", "Khung hình dịch chuyển từ trái sang phải."],
   "pan-up": ["Quét từ dưới lên", "Máy quay ảo di chuyển dọc lên trên."],
   "pan-down": ["Quét từ trên xuống", "Máy quay ảo di chuyển dọc xuống dưới."],
+  "diagonal-up": ["Quét chéo lên", "Máy quay ảo lướt chéo từ góc dưới lên góc trên."],
+  "diagonal-down": ["Quét chéo xuống", "Máy quay ảo lướt chéo từ góc trên xuống góc dưới."],
+  "rotate-in": ["Xoay điện ảnh", "Cảnh nghiêng nhẹ rồi xoay về thẳng, tạo cảm giác có chiều sâu."],
+  "shake-cut": ["Rung máy chuyển cảnh", "Khung hình rung nhanh rồi ổn định, hợp video mạnh và kịch tính."],
   flash: ["Chớp sáng", "Một chớp trắng ngắn mở cảnh, hợp đoạn cao trào."],
 };
 function updateEffectInspector(s = effectSettings()) {
@@ -99,7 +106,9 @@ function updateEffectInspector(s = effectSettings()) {
   textPreview.style.fontFamily = s.fontFamily; textPreview.style.fontSize = `${Math.max(13, 20 * s.fontSizePercent / 100)}px`; textPreview.style.color = s.fontColor; textPreview.style.setProperty("--accent", s.accentColor);
   textPreview.className = ""; transitionPreview.className = "transition-demo";
   void textPreview.offsetWidth;
-  textPreview.className = `fx-${s.textEffect}`; transitionPreview.classList.add(`tr-${s.transition}`);
+  const randomPreviews = ["fade","cross-zoom","slide-left","diagonal-up","rotate-in","flash"];
+  const previewTransition = s.transition === "random" ? randomPreviews[Math.floor(Date.now() / 1800) % randomPreviews.length] : s.transition;
+  textPreview.className = `fx-${s.textEffect}`; transitionPreview.classList.add(`tr-${previewTransition}`);
 }
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
