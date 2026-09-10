@@ -21,7 +21,7 @@ const fmt = (n) =>
 function effectSettings() {
   return {
     fontFamily: $("#fontFamily").value,
-    fontSize: Number($("#fontSize").value),
+    fontSizePercent: Number($("#fontSizePercent").value),
     textEffect: $("#textEffect").value,
     transition: $("#transition").value,
     fontColor: $("#fontColor").value,
@@ -60,23 +60,59 @@ function applyCaptionStyle() {
   const s = effectSettings();
   caption.className = `caption fx-${s.textEffect} pos-${s.subtitlePosition}`;
   caption.style.fontFamily = s.fontFamily;
-  caption.style.fontSize = `${Math.max(12, Math.round(s.fontSize / 3))}px`;
+  caption.style.fontSize = `${Math.max(12, Math.round(19 * s.fontSizePercent / 100))}px`;
   caption.style.color = s.fontColor;
   caption.style.setProperty("--accent", s.accentColor);
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
+  updateEffectInspector(s);
+}
+const TEXT_EFFECT_INFO = {
+  none: ["Không hiệu ứng", "Phụ đề xuất hiện ngay, rõ ràng và nhẹ máy."],
+  fade: ["Mờ dần hiện lên", "Chữ tăng dần độ rõ, phù hợp video kể chuyện nhẹ nhàng."],
+  pop: ["Nảy Pop", "Chữ bật nhanh từ nhỏ đến đủ cỡ, tạo cảm giác năng động."],
+  karaoke: ["Karaoke tô từng từ", "Từng từ đổi sang màu nhấn theo nhịp lời thoại."],
+  typewriter: ["Gõ máy từng chữ", "Các ký tự lần lượt xuất hiện như đang được đánh máy."],
+  "slide-up": ["Trượt từ dưới lên", "Cụm chữ đi từ dưới lên rồi dừng ở vị trí phụ đề."],
+  "zoom-in": ["Phóng lớn vào", "Chữ phóng từ tâm ra kích thước chuẩn."],
+  bounce: ["Nảy đàn hồi", "Chữ phóng quá cỡ rồi thu lại tạo nhịp nảy."],
+  glow: ["Phát sáng", "Viền chữ phát sáng bằng màu nhấn đã chọn."],
+  shake: ["Rung nhấn mạnh", "Chữ rung ngắn khi xuất hiện để nhấn câu quan trọng."],
+};
+const TRANSITION_INFO = {
+  none: ["Cắt thẳng", "Đổi cảnh tức thì, nhanh và dứt khoát."],
+  fade: ["Mờ dần", "Cảnh mới hiện dần từ nền tối."],
+  "zoom-in": ["Zoom tiến", "Ảnh tiến chậm vào chủ thể theo phong cách Ken Burns."],
+  "zoom-out": ["Zoom lùi", "Ảnh lùi chậm để dần hé lộ toàn bộ khung cảnh."],
+  "slide-left": ["Trượt sang trái", "Khung hình dịch chuyển từ phải sang trái."],
+  "slide-right": ["Trượt sang phải", "Khung hình dịch chuyển từ trái sang phải."],
+  "pan-up": ["Quét từ dưới lên", "Máy quay ảo di chuyển dọc lên trên."],
+  "pan-down": ["Quét từ trên xuống", "Máy quay ảo di chuyển dọc xuống dưới."],
+  flash: ["Chớp sáng", "Một chớp trắng ngắn mở cảnh, hợp đoạn cao trào."],
+};
+function updateEffectInspector(s = effectSettings()) {
+  const textInfo = TEXT_EFFECT_INFO[s.textEffect] || TEXT_EFFECT_INFO.none;
+  const transitionInfo = TRANSITION_INFO[s.transition] || TRANSITION_INFO.none;
+  const textPreview = $("#textEffectPreview"), transitionPreview = $("#transitionPreview");
+  $("#fontSizeValue").textContent = `${s.fontSizePercent}%`;
+  $("#textEffectName").textContent = textInfo[0]; $("#textEffectDescription").textContent = textInfo[1];
+  $("#transitionName").textContent = transitionInfo[0]; $("#transitionDescription").textContent = transitionInfo[1];
+  textPreview.style.fontFamily = s.fontFamily; textPreview.style.fontSize = `${Math.max(13, 20 * s.fontSizePercent / 100)}px`; textPreview.style.color = s.fontColor; textPreview.style.setProperty("--accent", s.accentColor);
+  textPreview.className = ""; transitionPreview.className = "transition-demo";
+  void textPreview.offsetWidth;
+  textPreview.className = `fx-${s.textEffect}`; transitionPreview.classList.add(`tr-${s.transition}`);
 }
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSize","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformPosition","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
 let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys(profiles)[0];
 function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); }
 function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
-function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
 $("#renameProfile").onclick = () => {

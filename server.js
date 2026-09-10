@@ -18,6 +18,7 @@ import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
+  fontsRoot = path.join(root, "dist", "fonts"),
   exportRoot = process.env.MATCHCUT_EXPORT_DIR || "C:\\MatchCut\\Exports";
 await mkdir(jobsRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
@@ -113,7 +114,8 @@ function createAss(scenes, settings) {
       settings.subtitlePosition
     ] || [2, 70],
     font = String(settings.fontFamily || "Arial").replaceAll(",", ""),
-    size = Math.min(110, Math.max(24, Number(settings.fontSize) || 56)),
+    sizePercent = Math.min(220, Math.max(40, Number(settings.fontSizePercent) || 100)),
+    size = Math.round(56 * sizePercent / 100),
     primary = assColor(settings.fontColor),
     accent = assColor(settings.accentColor),
     outline = assColor(settings.secondaryOutline || "#000000"),
@@ -139,6 +141,15 @@ function createAss(scenes, settings) {
           );
         text = words.map((word) => `{\\k${centis}}${word}`).join(" ");
       }
+      if (settings.textEffect === "typewriter") {
+        const characters = [...text], centis = Math.max(1, Math.round(((Number(scene.end) - Number(scene.start)) * 100) / Math.max(1, characters.length)));
+        text = characters.map((character) => `{\\k${centis}}${character}`).join("");
+      }
+      if (settings.textEffect === "slide-up") text = `{\\move(960,1160,960,900,0,350)\\fad(120,100)}${text}`;
+      if (settings.textEffect === "zoom-in") text = `{\\fscx35\\fscy35\\t(0,320,\\fscx100\\fscy100)}${text}`;
+      if (settings.textEffect === "bounce") text = `{\\fscx55\\fscy55\\t(0,180,\\fscx120\\fscy120)\\t(180,360,\\fscx100\\fscy100)}${text}`;
+      if (settings.textEffect === "glow") text = `{\\blur3\\bord5\\3c${accent}}${text}`;
+      if (settings.textEffect === "shake") text = `{\\frz-2\\t(0,100,\\frz2)\\t(100,200,\\frz-2)\\t(200,300,\\frz0)}${text}`;
       return `Dialogue: 0,${assTime(scene.start)},${assTime(scene.end)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
@@ -219,10 +230,20 @@ app.post(
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
         if (settings.transition === "fade")
           vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
-        if (settings.transition === "zoom" && scene.mediaType === "image")
+        if (settings.transition === "zoom-in" && scene.mediaType === "image")
           vf += `,zoompan=z='min(zoom+0.0008,1.08)':d=1:s=${width}x${height}:fps=30`;
-        if (settings.transition === "slide")
+        if (settings.transition === "zoom-out" && scene.mediaType === "image")
+          vf += `,zoompan=z='if(eq(on,1),1.08,max(zoom-0.0008,1.0))':d=1:s=${width}x${height}:fps=30`;
+        if (settings.transition === "slide-left")
           vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*(1-min(t/${duration.toFixed(3)},1))':y=22`;
+        if (settings.transition === "slide-right")
+          vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*min(t/${duration.toFixed(3)},1)':y=22`;
+        if (settings.transition === "pan-up")
+          vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*(1-min(t/${duration.toFixed(3)},1))'`;
+        if (settings.transition === "pan-down")
+          vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*min(t/${duration.toFixed(3)},1)'`;
+        if (settings.transition === "flash")
+          vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
         vf += ",format=yuv420p";
         if (scene.mediaType === "image")
           await run([
@@ -315,10 +336,11 @@ app.post(
           .replaceAll("\\", "/")
           .replace(":", "\\:")
           .replaceAll("'", "\\'");
+        const escapedFonts = fontsRoot.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
         await run([
           ...baseArgs,
           "-vf",
-          `subtitles=filename='${escaped}'`,
+          `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`,
           "-c:v",
           "libx264",
           "-preset",
