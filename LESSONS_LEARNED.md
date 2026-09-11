@@ -177,3 +177,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Sóng cỡ lớn cần điều chỉnh độc lập chiều rộng, chiều cao, vị trí, độ đậm và độ dày; cấu hình phải lưu theo kênh.
 - Kiểu cầu vồng phải được tạo trong filter graph bằng waveform mask và gradient thật, không chỉ tô CSS ở preview.
 - Dùng `showwaves` chế độ `p2p`, thang `sqrt` và `draw=full` để biên độ rõ hơn; dùng dilation có giới hạn để tăng độ dày mà không làm nặng render quá mức.
+
+### 25. Chọn Intro/Outro phải đưa chúng vào file cuối
+
+- Triệu chứng: giao diện nhận file Intro/Outro và persistent job lưu file, nhưng MP4 đầu ra chỉ có phần nội dung.
+- Nguyên nhân: cả pipeline single-pass và dự phòng chỉ chuyển file qua request, chưa đưa chúng vào concat cuối.
+- Intro phải giữ hình và âm thanh gốc; voice/content chỉ bắt đầu sau khi Intro kết thúc. Outro nối sau khi content kết thúc và giữ âm thanh gốc.
+- Để không mã hóa lại video 40 phút, chỉ chuẩn hóa Intro/Outro về cùng kích thước, 30 fps, H.264/AAC 48 kHz stereo rồi nối với content bằng stream-copy. Nếu Intro/Outro không có audio, thêm silence để cấu trúc stream vẫn đồng nhất.

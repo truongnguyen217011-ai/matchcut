@@ -99,6 +99,15 @@ function probeMediaDuration(file) {
     });
   });
 }
+function probeHasAudio(file) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], { windowsHide: true });
+    let details = "";
+    child.stderr.on("data", (chunk) => (details += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", () => resolve(/Stream #.*Audio:/i.test(details)));
+  });
+}
 let nvencUsable;
 async function hasNvenc() {
   if (nvencUsable !== undefined) return nvencUsable;
@@ -126,6 +135,37 @@ async function runVideoEncode(baseArgs, output, options = {}) {
   }
   await run([...baseArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", output]);
   return "libx264-fallback";
+}
+async function normalizeBoundaryVideo(source, output, width, height, fast) {
+  const hasAudio = await probeHasAudio(source);
+  const args = ["-y", "-hide_banner", "-loglevel", "error", "-i", source];
+  if (!hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
+  args.push(
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p`,
+    "-map", "0:v:0", "-map", hasAudio ? "0:a:0" : "1:a:0", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart",
+  );
+  await runVideoEncode(args, output, { fast });
+}
+async function attachIntroOutro({ dir, content, files, width, height, fast, onProgress }) {
+  const intro = files?.intro?.[0], outro = files?.outro?.[0];
+  if (!intro && !outro) return content;
+  await onProgress?.("Ghép Intro và Outro", 96);
+  const segments = [];
+  if (intro) {
+    const normalizedIntro = path.join(dir, "normalized-intro.mp4");
+    await normalizeBoundaryVideo(intro.path, normalizedIntro, width, height, fast);
+    segments.push(normalizedIntro);
+  }
+  segments.push(content);
+  if (outro) {
+    const normalizedOutro = path.join(dir, "normalized-outro.mp4");
+    await normalizeBoundaryVideo(outro.path, normalizedOutro, width, height, fast);
+    segments.push(normalizedOutro);
+  }
+  const list = path.join(dir, "intro-content-outro.txt"), output = path.join(dir, "matchcut-with-intro-outro.mp4");
+  await writeFile(list, segments.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join("\n"), "utf8");
+  await run(["-y", "-hide_banner", "-loglevel", "error", "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", output]);
+  return output;
 }
 async function availableExportPath(originalName) {
   const base =
@@ -329,7 +369,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   const graphPath = path.join(dir, "single-pass.ffgraph");
   await writeFile(graphPath, filters.join(";\n"), "utf8");
   const output = path.join(dir, outputName);
-  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false });
+  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false });
   return { output, encoder };
 }
 async function renderChunkedSinglePass(options) {
@@ -449,6 +489,7 @@ app.post(
           } : null;
           const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, onProgress };
           const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
+          singlePass.output = await attachIntroOutro({ dir, content: singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
           const savedPath = await availableExportPath(voice.originalname);
           await copyFile(singlePass.output, savedPath);
           return sendRenderResult({
@@ -631,14 +672,15 @@ app.post(
         if (subtitleFilter) encodeArgs.push("-vf", subtitleFilter);
         encodeArgs.push("-map", "0:v:0", "-map", "1:a:0");
       }
-      encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart");
-      if (subtitleFilter || hasVisualLayers) renderEncoder = await runVideoEncode(encodeArgs, output, { fast: settings.fastRender !== false });
+      encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart");
+      if (subtitleFilter || hasVisualLayers || req.files?.intro?.[0] || req.files?.outro?.[0]) renderEncoder = await runVideoEncode(encodeArgs, output, { fast: settings.fastRender !== false });
       else {
         await run([...encodeArgs, "-c:v", "copy", output]);
         renderEncoder = "copy";
       }
+      const finalOutput = await attachIntroOutro({ dir, content: output, files: req.files, width, height, fast: settings.fastRender !== false });
       const savedPath = await availableExportPath(voice.originalname);
-      await copyFile(output, savedPath);
+      await copyFile(finalOutput, savedPath);
       sendRenderResult({
         ok: true,
         savedPath,
