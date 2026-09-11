@@ -897,6 +897,24 @@ app.post("/api/jobs", jobUpload, async (req, res) => {
   } catch (error) { await rm(dir, { recursive: true, force: true }); res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
 });
 app.get("/api/jobs", (_req, res) => res.json({ jobs: [...persistentJobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(jobPublic) }));
+app.delete("/api/jobs", async (_req, res) => {
+  const activeJobs = [...persistentJobs.values()].filter((job) => ["queued", "transcribing", "rendering"].includes(job.status));
+  if (activeJobs.length || persistentWorkerRunning) {
+    return res.status(409).json({ error: "Không thể xóa hàng đợi khi backend còn job đang xử lý.", activeJobs: activeJobs.map(jobPublic) });
+  }
+  try {
+    await Promise.allSettled([...persistentSaveQueues.values()]);
+    const entries = await readdir(persistentRoot, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) await rm(path.join(persistentRoot, entry.name), { recursive: true, force: true });
+    }
+    const deleted = persistentJobs.size;
+    persistentJobs.clear();
+    res.json({ ok: true, deleted, outputsPreserved: true, exportRoot });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Không thể xóa lịch sử hàng đợi." });
+  }
+});
 app.get("/api/jobs/:id", (req, res) => { const job = persistentJobs.get(req.params.id); return job ? res.json(jobPublic(job)) : res.status(404).json({ error: "Không tìm thấy job." }); });
 app.post("/api/jobs/:id/retry", async (req, res) => {
   const job = persistentJobs.get(req.params.id); if (!job) return res.status(404).json({ error: "Không tìm thấy job." });

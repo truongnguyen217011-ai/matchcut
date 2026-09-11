@@ -164,3 +164,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Không chỉ sửa lỗi người dùng vừa nhìn thấy. Phải dự đoán lỗi có khả năng xuất hiện ở video dài, chạy hàng loạt, nhiều hiệu ứng, đường dẫn ổ mạng, thiếu file, mất kết nối giao diện và backend khởi động lại.
 - Mọi ước lượng tốc độ phải dựa trên bài test gần với cấu hình sản xuất thực tế. Chỉ báo hoàn thành sau khi MP4 render xong, tồn tại đúng nơi, có thời lượng đúng và giải mã toàn bộ với exit code 0.
 - Khi có lỗi, phải chỉ rõ công đoạn, nguyên nhân đọc được từ log, phần có thể tiếp tục và phần cần chạy lại; ưu tiên tiếp tục từ checkpoint thay vì làm lại toàn bộ video.
+
+### 23. Xóa hàng đợi phải xóa cả trạng thái bền vững
+
+- Triệu chứng: bấm “Xóa hết” làm danh sách trống, nhưng job/voice cũ xuất hiện lại sau lần đồng bộ backend kế tiếp.
+- Nguyên nhân: giao diện chỉ xóa mảng trong trình duyệt, còn `data/runtime-jobs` và bộ nhớ backend vẫn giữ job.
+- Cách phòng tránh: nút xóa phải gọi API xóa job, file voice/SRT và checkpoint timestamp trên backend; đồng thời xóa voice đang chọn và giá trị file input trên giao diện.
+- Không xóa MP4 đã xuất trong `C:\MatchCut\Exports`. Phải từ chối xóa nếu có job đang nhận dạng hoặc render để tránh phá hỏng tiến trình.

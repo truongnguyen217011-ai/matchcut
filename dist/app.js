@@ -269,6 +269,20 @@ function setActiveVoice(f) {
   ready();
   updateBatchButtons();
 }
+function clearActiveVoice() {
+  if (audio.src?.startsWith("blob:")) URL.revokeObjectURL(audio.src);
+  activeVoiceFile = null;
+  audio.removeAttribute("src");
+  audio.load();
+  voice.value = "";
+  $("#voiceLabel").textContent = "Chọn file voice";
+  $("#outputName").textContent = "Tên voice.mp4";
+  $("#voiceDrop").style.borderStyle = "dashed";
+  $("#whisperBtn").disabled = true;
+  whisperChunks = [];
+  ready();
+  updateBatchButtons();
+}
 voice.onchange = () => {
   const incoming = [...voice.files];
   const subtitles = incoming.filter((file) => /\.srt$/i.test(file.name));
@@ -669,7 +683,21 @@ function renderBatchList() {
 function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some((item) => item.jobId || (item.file && assets.length)); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || !canRun; $("#runBatch").disabled = batchRunning || !canRun; $("#stopBatch").disabled = !batchRunning; }
 $("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
-$("#clearBatch").onclick = () => { if (batchRunning) return; batchFiles = []; renderBatchList(); batchLog("Đã làm trống hàng đợi."); };
+$("#clearBatch").onclick = async () => {
+  if (batchRunning) return;
+  const button = $("#clearBatch"); button.disabled = true;
+  try {
+    const response = await fetch("/api/jobs", { method: "DELETE" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không thể xóa hàng đợi.");
+    batchFiles = [];
+    clearActiveVoice();
+    renderBatchList();
+    batchLog(`Đã xóa ${result.deleted} job, voice và timestamp khỏi hàng đợi. MP4 trong ${result.exportRoot} được giữ nguyên.`);
+  } catch (error) {
+    batchLog(`Không thể xóa hàng đợi: ${error.message}`);
+  } finally { button.disabled = false; }
+};
 $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu cầu dừng. File hiện tại sẽ hoàn tất rồi hàng đợi dừng lại."); };
 async function processBatchItem(item) {
   if (!item.jobId) {
