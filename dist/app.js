@@ -210,7 +210,7 @@ let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys
 let profileSyncReady = false;
 function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); if (profileSyncReady) void fetch("/api/project-state", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ profiles, activeProfile }) }); }
 function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
-function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; }
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } $("#folderPaths").value = profile.folderPaths || ""; persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; setTimeout(() => void loadProfileMediaLibrary(id, profile.folderPaths || ""), 0); }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
 $("#renameProfile").onclick = () => {
@@ -327,7 +327,29 @@ function addMediaFiles(files) {
   updateBatchButtons();
 }
 mediaInput.onchange = () => addMediaFiles(mediaInput.files);
-async function scanFolders() {
+let mediaLibraryGeneration = 0;
+function clearMediaLibrary() {
+  for (const asset of assets) if (asset.url?.startsWith("blob:")) URL.revokeObjectURL(asset.url);
+  assets = [];
+  mediaInput.value = "";
+  $("#mediaCount").textContent = "0 file";
+  $("#mediaStrip").innerHTML = '<div class="media-summary">Chưa có kho tư liệu cho kênh này.</div>';
+  ready(); updateBatchButtons();
+}
+function saveMediaLibraryToActiveProfile() {
+  if (!profiles[activeProfile]) return;
+  profiles[activeProfile] = { ...profiles[activeProfile], ...snapshotProfile(), folderPaths: $("#folderPaths").value };
+  persistProfiles();
+  $("#profileStatus").textContent = `Đã tự lưu kho tư liệu cho “${profiles[activeProfile].profileName}”.`;
+}
+async function loadProfileMediaLibrary(profileId, paths) {
+  const generation = ++mediaLibraryGeneration;
+  clearMediaLibrary();
+  if (!String(paths || "").trim()) { $("#folderList").textContent = "Kênh này chưa lưu folder tư liệu."; return; }
+  $("#folderList").textContent = "Đang tự nạp kho tư liệu đã lưu theo kênh…";
+  await scanFolders({ persist: false, profileId, generation });
+}
+async function scanFolders(options = {}) {
   const folders = $("#folderPaths").value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   if (!folders.length) { $("#folderList").textContent = "Hãy chọn folder hoặc dán ít nhất một đường dẫn."; return; }
   $("#folderList").textContent = "Đang quét trực tiếp trên ổ đĩa…";
@@ -335,15 +357,20 @@ async function scanFolders() {
     const response = await fetch("/api/media-folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folders }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Không thể quét folder");
+    if (options.generation !== undefined && (options.generation !== mediaLibraryGeneration || options.profileId !== activeProfile)) return;
     assets = assets.filter((asset) => asset.file);
     for (const item of result.files) assets.push({ ...item, file: null, url: null });
     $("#mediaCount").textContent = `${assets.length} file`;
     $("#folderList").innerHTML = result.folders.map((folder) => `<div><strong>▣ ${folder}</strong></div>`).join("") + `<span>${result.files.length.toLocaleString("vi-VN")} file được lập chỉ mục, không tải vào trình duyệt.</span>`;
     $("#mediaStrip").innerHTML = `<div class="media-summary">Kho cục bộ sẵn sàng: ${result.files.length.toLocaleString("vi-VN")} file · FFmpeg sẽ đọc trực tiếp khi render</div>`;
     ready(); updateBatchButtons();
-  } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
+    if (options.persist !== false) saveMediaLibraryToActiveProfile();
+  } catch (error) {
+    if (options.generation !== undefined && (options.generation !== mediaLibraryGeneration || options.profileId !== activeProfile)) return;
+    $("#folderList").textContent = `Lỗi: ${error.message}`;
+  }
 }
-$("#addFolders").onclick = scanFolders;
+$("#addFolders").onclick = () => { mediaLibraryGeneration += 1; void scanFolders(); };
 $("#pickFolder").onclick = async () => {
   const button = $("#pickFolder"); button.disabled = true; button.textContent = "Hộp thoại đang mở phía trước…"; $("#folderList").textContent = "Chọn một folder trong cửa sổ Windows vừa mở, hoặc bấm Cancel để quay lại.";
   try {
@@ -353,6 +380,7 @@ $("#pickFolder").onclick = async () => {
       const paths = $("#folderPaths"), current = paths.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
       if (!current.includes(result.folder)) current.push(result.folder);
       paths.value = current.join("\n");
+      mediaLibraryGeneration += 1;
       await scanFolders();
     }
   } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }

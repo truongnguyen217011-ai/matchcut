@@ -184,3 +184,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Nguyên nhân: cả pipeline single-pass và dự phòng chỉ chuyển file qua request, chưa đưa chúng vào concat cuối.
 - Intro phải giữ hình và âm thanh gốc; voice/content chỉ bắt đầu sau khi Intro kết thúc. Outro nối sau khi content kết thúc và giữ âm thanh gốc.
 - Để không mã hóa lại video 40 phút, chỉ chuẩn hóa Intro/Outro về cùng kích thước, 30 fps, H.264/AAC 48 kHz stereo rồi nối với content bằng stream-copy. Nếu Intro/Outro không có audio, thêm silence để cấu trúc stream vẫn đồng nhất.
+
+### 26. Kho tư liệu phải tự lưu và tự nạp riêng theo từng kênh
+
+- Chỉ đưa `folderPaths` vào danh sách field của profile là chưa đủ; thao tác chọn/quét folder phải tự snapshot và lưu profile ngay, không phụ thuộc người dùng bấm “Lưu”.
+- Khi mở tool hoặc đổi kênh, phải xóa kho đang hiển thị, nạp đường dẫn của đúng kênh rồi tự quét lại trực tiếp từ ổ đĩa.
+- Mỗi lượt tự quét mang generation và profile id; kết quả trả chậm của kênh cũ không được ghi đè kho của kênh mới.
