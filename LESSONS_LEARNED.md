@@ -139,3 +139,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 - Sóng nhạc nền và sóng voice phải có thanh phần trăm độ đậm/độ trong suốt riêng, mặc định 100% để không tự thay đổi cấu hình cũ.
 - Giá trị phải được xem trước ngay trên giao diện, lưu theo cấu hình kênh và áp dụng vào alpha của lớp sóng trong cả pipeline single-pass lẫn pipeline dự phòng.
+
+### 20. Typewriter và Karaoke phải có hành vi khác nhau thật sự
+
+- Typewriter không được dùng `\\k` thông thường vì cách đó hiển thị toàn bộ câu rồi đổi màu, tức là Karaoke giả dạng Typewriter.
+- Typewriter phải làm ký tự chưa tới lượt hoàn toàn vô hình, sau đó hé lộ lần lượt từng ký tự; với ASS dùng màu phụ trong suốt kết hợp `\\ko` để ẩn cả phần viền chưa đọc.
+- Karaoke phải hiển thị toàn bộ câu ngay từ đầu bằng màu chữ thường và đổi từng từ đã đọc sang màu nhấn.
+- Không chỉ kiểm tra chuỗi ASS: phải render MP4 thật và đối chiếu khung hình ở đầu, giữa, cuối cue cho cả hai hiệu ứng.

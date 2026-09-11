@@ -184,7 +184,7 @@ function createAss(scenes, settings) {
   const events = subtitleCues
     .map((scene) => {
       const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
-      const text = applyAssTextEffect(content, placement, scene, settings, accent);
+      const text = applyAssTextEffect(content, placement, scene, settings, accent, primary);
       return `Dialogue: 0,${assTime(scene.start)},${assTime(scene.end)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
