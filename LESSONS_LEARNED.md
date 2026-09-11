@@ -59,3 +59,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Cách phòng tránh: ưu tiên Faster-Whisper model `small`, `beam_size=1`, VAD bỏ khoảng lặng và `condition_on_previous_text=False`; thử CUDA trước rồi tự hạ xuống CPU `int8`. Giữ pipeline JavaScript chỉ làm dự phòng.
 - Ngôn ngữ cấu hình kênh phải được gửi thẳng vào engine. Nếu chọn `Tự động`, phải trả về ngôn ngữ phát hiện cùng độ tin cậy để kiểm tra.
 - Kiểm thử: voice tiếng Anh 25 giây hoàn thành qua API trong 6,85 giây trên CPU, tạo 5 timestamp liên tục; chế độ tự động nhận đúng `en` với xác suất 0,9902.
+
+### 8. CUDA cho Faster-Whisper trên Windows phải đăng ký thư mục DLL
+
+- Chỉ có driver NVIDIA không đủ để CTranslate2 dùng GPU; cần cuBLAS CUDA 12 và cuDNN 9.
+- MatchCut cài các wheel NVIDIA Windows chính thức ngay trong `.venv-whisper` để không phụ thuộc CUDA Toolkit toàn hệ thống.
+- Trước khi import Faster-Whisper, phải thêm `nvidia/cublas/bin` và `nvidia/cudnn/bin` bằng `os.add_dll_directory`; chỉ sửa `PATH` sau khi Python đã chạy là chưa đủ trên Windows.
+- Luôn xác nhận kết quả API trả về `device: cuda` và đo thời gian trên voice thật, không suy luận GPU đang chạy chỉ từ việc máy có card NVIDIA.
+- Kiểm thử đã xác nhận RTX 3060 xử lý voice 25 giây qua API trong 2,86 giây và trả về `engine: faster-whisper`, `device: cuda`, `model: small`.

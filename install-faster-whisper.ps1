@@ -8,5 +8,5 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 }
 & $venvPython -m pip install --upgrade pip
 & $venvPython -m pip install faster-whisper==1.2.1
+& $venvPython -m pip install nvidia-cublas-cu12==12.8.4.1 nvidia-cudnn-cu12==9.10.2.21
 & $venvPython -c "from faster_whisper import WhisperModel; print('Faster-Whisper da san sang.')"
-

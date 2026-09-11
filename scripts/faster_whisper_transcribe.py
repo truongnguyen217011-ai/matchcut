@@ -3,6 +3,21 @@ import json
 import os
 import sys
 
+# NVIDIA's Windows wheels keep the CUDA DLLs inside site-packages. Register
+# those folders before importing CTranslate2/Faster-Whisper.
+_dll_handles = []
+if os.name == "nt":
+    site_packages = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    site_packages = os.path.join(site_packages, ".venv-whisper", "Lib", "site-packages")
+    cuda_bins = [
+        os.path.join(site_packages, "nvidia", "cublas", "bin"),
+        os.path.join(site_packages, "nvidia", "cudnn", "bin"),
+    ]
+    for cuda_bin in cuda_bins:
+        if os.path.isdir(cuda_bin):
+            _dll_handles.append(os.add_dll_directory(cuda_bin))
+    os.environ["PATH"] = os.pathsep.join(cuda_bins + [os.environ.get("PATH", "")])
+
 from faster_whisper import WhisperModel
 
 
