@@ -8,9 +8,8 @@ const settings = { textEffect: "typewriter", wordsPerCaption: 8, maxLines: 2, la
 test("typewriter giữ nguyên mã xuống dòng ASS", () => {
   const result = applyAssTextEffect("The bird turns its\\Nsmall head toward you", "{\\pos(960,900)}", { start: 0, end: 2 }, settings, "&H0000FFFF");
   assert.match(result, /\\N/);
-  assert.doesNotMatch(result, /\\\{\\ko\d+\}N/);
-  assert.match(result, /\{\\2a&HFF&\}/);
-  assert.match(result, /\{\\ko\d+\}T/);
+  assert.doesNotMatch(result, /\\ko\d+/);
+  assert.doesNotMatch(result, /\\2a&HFF&/);
   assert.doesNotMatch(result, /\{\\k\d+\}/);
 });
 

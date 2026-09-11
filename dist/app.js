@@ -1,4 +1,5 @@
 const $ = (s) => document.querySelector(s);
+const rgba = (hex, opacity) => { const value = String(hex || "#000000").replace("#", "").padEnd(6, "0").slice(0, 6); return `rgba(${parseInt(value.slice(0,2),16)},${parseInt(value.slice(2,4),16)},${parseInt(value.slice(4,6),16)},${Math.min(1,Math.max(0,Number(opacity) || 0))})`; };
 const audio = $("#audio"),
   voice = $("#voiceInput"),
   mediaInput = $("#mediaInput"),
@@ -53,6 +54,8 @@ function effectSettings() {
     fontItalic: $("#fontItalic").checked,
     outlineSize: Number($("#outlineSize").value),
     subtitleBg: Number($("#subtitleBg").value),
+    captionBackgroundStyle: $("#captionBackgroundStyle").value,
+    captionBackgroundColor: $("#captionBackgroundColor").value,
     backgroundDarkness: Number($("#backgroundDarkness").value),
     wordsPerCaption: Number($("#wordsPerCaption").value),
     maxLines: Number($("#maxLines").value),
@@ -101,6 +104,7 @@ function applyCaptionStyle() {
   caption.style.left = `${s.subtitleX}%`; caption.style.right = "auto"; caption.style.top = `${s.subtitleY}%`; caption.style.bottom = "auto"; caption.style.width = "84%"; caption.style.transform = "translate(-50%,-50%)";
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
+  $("#subtitleBgValue").textContent = `${s.subtitleBg}%`;
   $("#watermarkRotationSpeedValue").textContent = `${s.watermarkRotationSpeed}°/giây`;
   $("#overlayImageOpacityValue").textContent = `${s.overlayImageOpacity}%`;
   updateWaveformPreview(s);
@@ -120,6 +124,18 @@ const TEXT_EFFECT_INFO = {
   bounce: ["Nảy đàn hồi", "Chữ phóng quá cỡ rồi thu lại tạo nhịp nảy."],
   glow: ["Phát sáng", "Viền chữ phát sáng bằng màu nhấn đã chọn."],
   shake: ["Rung nhấn mạnh", "Chữ rung ngắn khi xuất hiện để nhấn câu quan trọng."],
+};
+const CAPTION_BACKGROUND_INFO = {
+  solid: ["Hộp màu tùy chỉnh", "Nền liền khối, dùng màu và độ đậm bạn chọn."],
+  none: ["Không nền", "Chỉ giữ chữ và viền, phù hợp cảnh nền sạch."],
+  "soft-dark": ["Đen mềm", "Hộp đen bán trong suốt tăng độ đọc trên footage sáng."],
+  glass: ["Kính tối", "Nền xanh đen bán trong suốt, viền mảnh hiện đại."],
+  highlight: ["Highlight màu nhấn", "Màu nhấn phủ nền và tự chọn chữ sáng hoặc tối dễ đọc."],
+  "white-card": ["Thẻ trắng", "Thẻ trắng tương phản với chữ tối, hợp video tối giản."],
+  neon: ["Neon viền sáng", "Không dùng hộp; viền màu nhấn phát sáng quanh chữ."],
+  cinema: ["Điện ảnh", "Nền gần đen, chữ kem và bóng nhẹ theo phong cách phim."],
+  shadow: ["Bóng nổi", "Không hộp, dùng viền và bóng sâu để tách chữ khỏi hình."],
+  "outline-card": ["Viền màu dày", "Không dùng hộp; viền màu nhấn dày giúp chữ nổi bật rõ."],
 };
 const TRANSITION_INFO = {
   random: ["Random thông minh", "Mỗi cảnh tự chọn một hiệu ứng khác và tránh lặp kiểu vừa dùng."],
@@ -142,22 +158,26 @@ const TRANSITION_INFO = {
 function updateEffectInspector(s = effectSettings()) {
   const textInfo = TEXT_EFFECT_INFO[s.textEffect] || TEXT_EFFECT_INFO.none;
   const transitionInfo = TRANSITION_INFO[s.transition] || TRANSITION_INFO.none;
+  const backgroundInfo = CAPTION_BACKGROUND_INFO[s.captionBackgroundStyle] || CAPTION_BACKGROUND_INFO.solid;
   const textPreview = $("#textEffectPreview"), transitionPreview = $("#transitionPreview");
   $("#fontSizeValue").textContent = `${s.fontSizePercent}%`;
   $("#textEffectName").textContent = textInfo[0]; $("#textEffectDescription").textContent = textInfo[1];
   $("#transitionName").textContent = transitionInfo[0]; $("#transitionDescription").textContent = transitionInfo[1];
-  textPreview.style.fontFamily = s.fontFamily; textPreview.style.fontSize = `${Math.max(13, 20 * s.fontSizePercent / 100)}px`; textPreview.style.color = s.fontColor; textPreview.style.setProperty("--accent", s.accentColor);
+  textPreview.style.fontFamily = s.fontFamily; textPreview.style.fontSize = `${Math.max(13, 20 * s.fontSizePercent / 100)}px`; textPreview.style.color = s.fontColor; textPreview.style.setProperty("--accent", s.accentColor); textPreview.style.setProperty("--caption-bg-alpha", rgba(s.captionBackgroundColor, s.subtitleBg / 100)); textPreview.style.setProperty("--caption-black-alpha", rgba("#000000", s.subtitleBg / 100)); textPreview.style.setProperty("--caption-glass-alpha", rgba("#17332E", s.subtitleBg / 100)); textPreview.style.setProperty("--caption-accent-alpha", rgba(s.accentColor, s.subtitleBg / 100)); textPreview.style.setProperty("--caption-white-alpha", rgba("#FFFFFF", s.subtitleBg / 100)); textPreview.style.setProperty("--caption-cinema-alpha", rgba("#080A0F", s.subtitleBg / 100));
   textPreview.className = ""; transitionPreview.className = "transition-demo";
   void textPreview.offsetWidth;
   const randomPreviews = ["fade","cross-zoom","slide-left","diagonal-up","rotate-in","flash"];
   const previewTransition = s.transition === "random" ? randomPreviews[Math.floor(Date.now() / 1800) % randomPreviews.length] : s.transition;
-  textPreview.className = `fx-${s.textEffect}`; transitionPreview.classList.add(`tr-${previewTransition}`);
+  textPreview.className = `fx-${s.textEffect} caption-bg-${s.captionBackgroundStyle}`; transitionPreview.classList.add(`tr-${previewTransition}`);
+  $("#captionBackgroundName").textContent = backgroundInfo[0]; $("#captionBackgroundDescription").textContent = backgroundInfo[1];
+  $("#captionBackgroundGallery").querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.captionBg === s.captionBackgroundStyle));
 }
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
 $("#watermarkRotationSpeed").addEventListener("input", applyCaptionStyle);
 $("#overlayImageOpacity").addEventListener("input", applyCaptionStyle);
+$("#captionBackgroundGallery").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { $("#captionBackgroundStyle").value = button.dataset.captionBg; applyCaptionStyle(); }));
 function updateWaveformPreview(s = effectSettings()) {
   $("#waveformYValue").textContent = `${s.waveformY}%`; $("#voiceWaveformYValue").textContent = `${s.voiceWaveformY}%`; $("#waveformXValue").textContent = `${s.waveformX}%`; $("#voiceWaveformXValue").textContent = `${s.voiceWaveformX}%`; $("#waveformOpacityValue").textContent = `${s.waveformOpacity}%`; $("#voiceWaveformOpacityValue").textContent = `${s.voiceWaveformOpacity}%`; $("#waveformWidthValue").textContent = `${s.waveformWidth}%`; $("#waveformHeightValue").textContent = `${s.waveformHeight}px`;
   for (const [element,enabled,color,opacity,x,y] of [[$("#musicWavePreview"),s.waveformEnabled,s.waveformColor,s.waveformOpacity,s.waveformX,s.waveformY],[$("#voiceWavePreview"),s.voiceWaveformEnabled,s.voiceWaveformColor,s.voiceWaveformOpacity,s.voiceWaveformX,s.voiceWaveformY]]) { element.style.display = enabled ? "block" : "none"; element.style.setProperty("--wave-color",color); element.style.opacity = String(opacity / 100); element.style.left = `${x}%`; element.style.top = `${y}%`; element.style.width = `${s.waveformWidth}%`; element.style.height = `${Math.max(8,s.waveformHeight / 8)}px`; }
@@ -180,7 +200,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };

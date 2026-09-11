@@ -20,8 +20,9 @@ import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
-import { applyAssTextEffect } from "./ass-effects.js";
+import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
 import { compactVisualScenes } from "./render-utils.js";
+import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -150,12 +151,6 @@ const assTime = (value) => {
     seconds = (n % 60).toFixed(2).padStart(5, "0");
   return `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`;
 };
-const assColor = (hex) => {
-  const value = String(hex || "#ffffff")
-    .replace("#", "")
-    .padEnd(6, "f");
-  return `&H00${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2).toUpperCase()}`;
-};
 const assEscape = (text) =>
   String(text || "")
     .replaceAll("\\", "\\\\")
@@ -172,25 +167,27 @@ function createAss(scenes, settings) {
     font = String(settings.fontFamily || "Arial").replaceAll(",", ""),
     sizePercent = Math.min(220, Math.max(40, Number(settings.fontSizePercent) || 100)),
     size = Math.round(56 * sizePercent / 100),
-    primary = assColor(settings.fontColor),
-    accent = assColor(settings.accentColor),
-    outline = assColor(settings.secondaryOutline || "#000000"),
-    alpha = Math.round(255 * (1 - (Number(settings.subtitleBg) || 0) / 100)).toString(16).padStart(2, "0").toUpperCase(),
+    background = resolveCaptionBackground(settings),
+    primary = assColor(background.primary),
+    accent = assColor(background.secondary),
+    outline = background.borderStyle === 3 ? assColor(background.background, background.opacity) : assColor(background.outline),
+    back = background.borderStyle === 3 ? assColor("#000000", background.shadow ? Math.min(70, Math.max(35, background.opacity)) : 0) : assColor(background.background, background.opacity),
     bold = settings.fontBold === false ? 0 : -1,
     italic = settings.fontItalic ? -1 : 0,
     spacing = Math.max(0, Number(settings.letterSpacing) || 0),
-    outlineSize = Math.max(0, Number(settings.outlineSize) || 2);
+    outlineSize = background.outlineSize;
   const subtitleCues = buildSubtitleCues(scenes, settings);
-  const events = subtitleCues
+  const renderedCues = settings.textEffect === "typewriter" ? subtitleCues.flatMap(expandTypewriterScene) : subtitleCues;
+  const events = renderedCues
     .map((scene) => {
       const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
-      const text = applyAssTextEffect(content, placement, scene, settings, accent, primary);
+      const text = applyAssTextEffect(content, placement, scene, settings, accent, primary, background.prefix);
       return `Dialogue: 0,${assTime(scene.start)},${assTime(scene.end)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
   const end = assTime(Math.max(...scenes.map((scene) => Number(scene.end) || 0)));
   const title = settings.persistentTitle && settings.titleLine1 ? `\nDialogue: 1,0:00:00.00,${end},Title,,0,0,0,,${assEscape([settings.titleLine1, settings.titleLine2].filter(Boolean).join("\n"))}` : "";
-  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${font},${size},${primary},${accent},${outline},&H${alpha}000000,${bold},${italic},0,0,100,100,${spacing},0,3,${outlineSize},1,5,90,90,20,1\nStyle: Title,${font},62,${accent},${primary},${outline},&H50000000,-1,0,0,0,100,100,1,0,3,3,2,9,60,60,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events}${title}\n`;
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${font},${size},${primary},${accent},${outline},${back},${bold},${italic},0,0,100,100,${spacing},0,${background.borderStyle},${outlineSize},${background.shadow},5,90,90,20,1\nStyle: Title,${font},62,${accent},${primary},${outline},&H50000000,-1,0,0,0,100,100,1,0,3,3,2,9,60,60,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events}${title}\n`;
 }
 const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);

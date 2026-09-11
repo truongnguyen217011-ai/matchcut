@@ -143,6 +143,17 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 ### 20. Typewriter và Karaoke phải có hành vi khác nhau thật sự
 
 - Typewriter không được dùng `\\k` thông thường vì cách đó hiển thị toàn bộ câu rồi đổi màu, tức là Karaoke giả dạng Typewriter.
-- Typewriter phải làm ký tự chưa tới lượt hoàn toàn vô hình, sau đó hé lộ lần lượt từng ký tự; với ASS dùng màu phụ trong suốt kết hợp `\\ko` để ẩn cả phần viền chưa đọc.
+- Typewriter phải làm ký tự chưa tới lượt hoàn toàn vắng mặt khỏi event hiện tại, sau đó dùng các event tích lũy để hé lộ lần lượt; chỉ đổi alpha hoặc dùng `\\ko` vẫn có thể làm nền lộ trước.
 - Karaoke phải hiển thị toàn bộ câu ngay từ đầu bằng màu chữ thường và đổi từng từ đã đọc sang màu nhấn.
 - Không chỉ kiểm tra chuỗi ASS: phải render MP4 thật và đối chiếu khung hình ở đầu, giữa, cuối cue cho cả hai hiệu ứng.
+
+### 21. Nền phụ đề phải theo phạm vi chữ thực sự đang hiển thị
+
+- Với Typewriter, hộp nền phải lớn dần theo phần chữ đã xuất hiện; không được lộ sẵn chiều rộng của toàn câu.
+- Với Karaoke, Fade, Pop và các hiệu ứng hiển thị sẵn câu, nền phải phủ toàn bộ cụm chữ ngay từ đầu.
+- Mỗi preset nền phải có bản xem trước trước khi chọn, lưu theo cấu hình kênh, và render bằng đúng thông số ASS/FFmpeg tương ứng với preview.
+- Ưu tiên các nhóm thực dụng đang phổ biến: tương phản bằng box, bán trong suốt, highlight màu nhấn, thẻ sáng, viền/neon và shadow; không đặt tên hiệu ứng mà backend không tái tạo được.
+- Chuỗi màu ASS phải được chuẩn hóa đủ tám ký tự alpha-BGR viết hoa; kiểm thử trực tiếp các mức 0%, 50% và 100% để tránh màu/độ trong sai giữa preset.
+- `\\ko` có thể ẩn glyph nhưng `BorderStyle=3` vẫn vẽ BackColour trên toàn vùng chữ chưa hiện. Typewriter có nền phải được tạo bằng các event tích lũy nối tiếp (`A` → `AB` → `ABC`), để mỗi event chỉ chứa đúng phần chữ và nền được phép nhìn thấy.
+- Với libass, `BorderStyle=3` lấy `OutlineColour` làm màu hộp và `BackColour` chủ yếu làm bóng. Ánh xạ màu preset phải theo hành vi render thật này; không được suy luận từ tên trường ASS.
+- Với `BorderStyle=3`, không đặt `Outline=0`: libass có thể vẽ hộp đen mặc định thay vì màu `OutlineColour`. Preset dạng thẻ phải giữ padding tối thiểu 1.
