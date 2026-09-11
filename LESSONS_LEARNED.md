@@ -67,3 +67,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Trước khi import Faster-Whisper, phải thêm `nvidia/cublas/bin` và `nvidia/cudnn/bin` bằng `os.add_dll_directory`; chỉ sửa `PATH` sau khi Python đã chạy là chưa đủ trên Windows.
 - Luôn xác nhận kết quả API trả về `device: cuda` và đo thời gian trên voice thật, không suy luận GPU đang chạy chỉ từ việc máy có card NVIDIA.
 - Kiểm thử đã xác nhận RTX 3060 xử lý voice 25 giây qua API trong 2,86 giây và trả về `engine: faster-whisper`, `device: cuda`, `model: small`.
+
+### 9. Phải thử mã hóa NVENC thật ở kích thước hợp lệ
+
+- Việc FFmpeg liệt kê `h264_nvenc` chưa chứng minh encoder hoạt động. Phải mã hóa thử một frame và kiểm tra exit code.
+- RTX 3060/driver hiện tại từ chối frame kiểm tra 64×64 với lỗi `Frame Dimension less than the minimum supported value`; probe phải dùng ít nhất 256×256.
+- Cả bước tạo scene và bước gắn phụ đề/lớp phủ cuối phải dùng `h264_nvenc`; khi GPU lỗi mới tự hạ xuống `libx264`.
+- Dùng NVENC VBR, preset `p4`, CQ 23, bitrate mục tiêu 4 Mbps và trần 8 Mbps để cân bằng tốc độ, chất lượng và dung lượng.
+- Kiểm thử: video 1080p dài 60 giây có phụ đề/chuyển cảnh hoàn thành trong 12,61 giây, file 4,80 MB; giải mã đủ 60 giây với exit code 0 và API trả `renderEncoder: h264_nvenc`.

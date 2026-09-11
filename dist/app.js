@@ -656,7 +656,7 @@ async function processBatchItem(item) {
   renderForm.append("scenes", JSON.stringify(batchScenes.map((scene) => ({ start:scene.start, end:scene.end, text:scene.text, mediaIndex:compact.indexByAsset.get(scene.media), mediaPath:scene.media.localPath || null, mediaType:scene.media.type }))));
   renderForm.append("settings", JSON.stringify(effectSettings()));
   const renderResponse = await fetchWithRetry("/api/render", { method:"POST", body:renderForm }, `render ${item.file.name}`); const result = await renderResponse.json(); if (!renderResponse.ok) throw new Error(result.error || "Render thất bại");
-  item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong: ${result.fileName}${result.overlayImage ? ` · Lớp phủ: ${result.overlayImage}` : ""} → ${result.savedPath}`);
+  item.status = "Hoàn tất"; renderBatchList(); batchLog(`✓ Xong bằng ${result.renderEncoder || "FFmpeg"}: ${result.fileName}${result.overlayImage ? ` · Lớp phủ: ${result.overlayImage}` : ""} → ${result.savedPath}`);
 }
 async function runBatch(items) { if (batchRunning) return; if (!assets.length) { batchLog("Thiếu kho tư liệu. Hãy thêm ảnh/video trước khi chạy."); return; } batchRunning = true; batchStopRequested = false; updateBatchButtons(); for (const item of items) { if (batchStopRequested) break; try { await processBatchItem(item); } catch (error) { item.status = "Lỗi"; renderBatchList(); batchLog(`✕ ${item.file.name}: ${error.message}`); } } batchRunning = false; updateBatchButtons(); batchLog(batchStopRequested ? "Đã dừng hàng đợi." : "Đã xử lý xong hàng đợi."); }
 $("#runSingle").onclick = () => { const item = batchFiles.find((entry) => entry.selected); if (item) void runBatch([item]); };

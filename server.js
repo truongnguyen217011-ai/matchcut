@@ -75,6 +75,31 @@ function runCapture(command, args) {
     child.on("close", (code) => code === 0 ? resolve(output.trim()) : reject(new Error(error || `Folder picker exited ${code}`)));
   });
 }
+let nvencUsable;
+async function hasNvenc() {
+  if (nvencUsable !== undefined) return nvencUsable;
+  try {
+    // Ada/Ampere drivers reject very small NVENC frames; test at 256px.
+    await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1", "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "NUL"]);
+    nvencUsable = true;
+  } catch {
+    nvencUsable = false;
+  }
+  return nvencUsable;
+}
+async function runVideoEncode(baseArgs, output) {
+  if (await hasNvenc()) {
+    try {
+      await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "hq", "-rc", "vbr", "-cq", "23", "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
+      return "h264_nvenc";
+    } catch (error) {
+      console.warn(`NVENC fallback: ${error instanceof Error ? error.message : error}`);
+      nvencUsable = false;
+    }
+  }
+  await run([...baseArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", output]);
+  return "libx264-fallback";
+}
 async function availableExportPath(originalName) {
   const base =
     path
@@ -239,7 +264,7 @@ app.post(
           .json({ error: "Thiếu voice, tư liệu hoặc timeline." });
       const segments = [];
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
-      let overlayImagePath = null;
+      let overlayImagePath = null, renderEncoder = "copy";
       if (settings.overlayImageEnabled && settings.overlayImageFolder) {
         const overlayFiles = await findOverlayImages(settings.overlayImageFolder);
         if (!overlayFiles.length) throw new Error("Folder ảnh lớp phủ không có file PNG hoặc WebP.");
@@ -296,7 +321,7 @@ app.post(
           vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
         vf += ",format=yuv420p";
         if (scene.mediaType === "image")
-          await run([
+          renderEncoder = await runVideoEncode([
             ...common,
             "-loop",
             "1",
@@ -307,14 +332,9 @@ app.post(
             "-vf",
             vf,
             "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            out,
-          ]);
+          ], out);
         else
-          await run([
+          renderEncoder = await runVideoEncode([
             ...common,
             "-stream_loop",
             "-1",
@@ -325,12 +345,7 @@ app.post(
             "-vf",
             vf,
             "-an",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            out,
-          ]);
+          ], out);
         segments.push(out);
       }
       const concatFile = path.join(dir, "concat.txt");
@@ -424,10 +439,12 @@ app.post(
         if (subtitleFilter) encodeArgs.push("-vf", subtitleFilter);
         encodeArgs.push("-map", "0:v:0", "-map", "1:a:0");
       }
-      encodeArgs.push("-c:v", subtitleFilter || hasVisualLayers ? "libx264" : "copy");
-      if (subtitleFilter || hasVisualLayers) encodeArgs.push("-preset", "veryfast", "-crf", "20");
-      encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", output);
-      await run(encodeArgs);
+      encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart");
+      if (subtitleFilter || hasVisualLayers) renderEncoder = await runVideoEncode(encodeArgs, output);
+      else {
+        await run([...encodeArgs, "-c:v", "copy", output]);
+        renderEncoder = "copy";
+      }
       const savedPath = await availableExportPath(voice.originalname);
       await copyFile(output, savedPath);
       res.json({
@@ -435,6 +452,7 @@ app.post(
         savedPath,
         fileName: path.basename(savedPath),
         overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
+        renderEncoder,
         settings,
       });
     } catch (error) {
@@ -516,7 +534,7 @@ app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
 app.get("/api/health", async (_req, res) => {
   let transcriptionEngine = "whisper-js-fallback";
   try { await stat(fasterWhisperPython); transcriptionEngine = "faster-whisper"; } catch {}
-  res.json({ ok: true, engine: "FFmpeg", transcriptionEngine });
+  res.json({ ok: true, engine: "FFmpeg", transcriptionEngine, renderEncoder: await hasNvenc() ? "h264_nvenc" : "libx264" });
 });
 const port = Number(process.env.MATCHCUT_PORT) || 4173;
 app.listen(port, () =>
