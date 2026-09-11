@@ -1,4 +1,8 @@
 node_modules/
+.venv-whisper/
+.cache-whisper/
+__pycache__/
+*.pyc
 jobs/
 test-exports/
 test-exports-advanced/

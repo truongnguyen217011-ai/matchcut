@@ -375,7 +375,7 @@ match.onclick = async () => {
     renderTimeline();
     showScene(scenes[0]);
     $("#sceneCount").textContent =
-      `${scenes.length} cảnh${whisperChunks.length ? " · Whisper" : ""}`;
+      `${scenes.length} cảnh${whisperChunks.length ? " · Timestamp AI" : ""}`;
     $("#totalTime").textContent = fmt(total);
     $("#playBtn").disabled = false;
     $("#exportBtn").disabled = false;
@@ -528,7 +528,7 @@ $("#whisperBtn").onclick = async () => {
   button.disabled = true;
   status.className = "whisper-status show";
   status.textContent =
-    "Whisper đang nhận dạng voice. Lần đầu sẽ tải model khoảng 75 MB và có thể mất vài phút…";
+    "Faster-Whisper đang nhận dạng voice và tạo timestamp. Lần chạy đầu có thể lâu hơn để nạp model…";
   const form = new FormData();
   form.append("voice", activeVoiceFile);
   form.append("language", $("#language").value);
@@ -541,10 +541,10 @@ $("#whisperBtn").onclick = async () => {
     if (!response.ok) throw new Error(data.error || "Không thể nhận dạng");
     whisperChunks = data.chunks || [];
     script.value = data.text || whisperChunks.map((x) => x.text).join(" ");
-    status.textContent = `Đã tạo ${whisperChunks.length} đoạn có timestamp chính xác. Timeline sẽ ưu tiên các mốc Whisper.`;
+    status.textContent = `Đã tạo ${whisperChunks.length} đoạn bằng ${data.engine || "Whisper"} (${data.device || "CPU"}). Timeline sẽ ưu tiên các timestamp này.`;
     ready();
   } catch (error) {
-    status.textContent = `Lỗi Whisper: ${error.message}`;
+    status.textContent = `Lỗi tạo timestamp: ${error.message}`;
   } finally {
     button.disabled = false;
   }
@@ -641,12 +641,12 @@ $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu
 async function processBatchItem(item) {
   item.status = "Tạo timestamp"; renderBatchList(); batchLog(`Đang nhận dạng: ${item.file.name}`);
   const transcribeForm = new FormData(); transcribeForm.append("voice", item.file); transcribeForm.append("language", $("#language").value);
-  const startedAt = Date.now(), heartbeat = setInterval(() => batchLog(`Whisper vẫn đang xử lý ${item.file.name} · ${Math.max(1,Math.round((Date.now()-startedAt)/60000))} phút · file dài được chia thành từng khối 5 phút.`), 60000);
+  const startedAt = Date.now(), heartbeat = setInterval(() => batchLog(`Faster-Whisper vẫn đang xử lý ${item.file.name} · ${Math.max(1,Math.round((Date.now()-startedAt)/60000))} phút · đang tự bỏ khoảng lặng bằng VAD.`), 60000);
   let transcribeResponse;
   try { transcribeResponse = await fetchWithRetry("/api/transcribe", { method: "POST", body: transcribeForm }, `nhận dạng ${item.file.name}`); }
   finally { clearInterval(heartbeat); }
-  const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Whisper thất bại");
-  const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice"); batchLog(`Whisper hoàn tất ${transcript.audioParts || 1} khối âm thanh, tạo ${chunks.length} timestamp.`);
+  const transcript = await transcribeResponse.json(); if (!transcribeResponse.ok) throw new Error(transcript.error || "Tạo timestamp thất bại");
+  const chunks = transcript.chunks || []; if (!chunks.length) throw new Error("Không tạo được timestamp từ voice"); batchLog(`${transcript.engine || "Whisper"} (${transcript.device || "CPU"}, ${transcript.model || "mặc định"}) hoàn tất, tạo ${chunks.length} timestamp${transcript.language ? ` · ngôn ngữ: ${transcript.language}` : ""}.`);
   item.status = "Đang render"; renderBatchList(); batchLog(`Đang render ${chunks.length} cảnh: ${item.file.name}`);
   const chosenMedia = mediaPlan(chunks.length);
   const renderForm = new FormData(); renderForm.append("voice", item.file);

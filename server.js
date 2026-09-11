@@ -20,6 +20,8 @@ import { buildSubtitleCues } from "./subtitle-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   fontsRoot = path.join(root, "dist", "fonts"),
+  fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
+  fasterWhisperScript = path.join(root, "scripts", "faster_whisper_transcribe.py"),
   exportRoot = process.env.MATCHCUT_EXPORT_DIR || "C:\\MatchCut\\Exports";
 await mkdir(jobsRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
@@ -455,30 +457,53 @@ function enqueueTranscription(task) {
   transcriptionQueue = result.catch(() => undefined);
   return result;
 }
+async function transcribeWithFasterWhisper(audioPath, language) {
+  await stat(fasterWhisperPython);
+  const output = await runCapture(fasterWhisperPython, [
+    fasterWhisperScript,
+    audioPath,
+    "--language",
+    language || "auto",
+    "--device",
+    process.env.MATCHCUT_WHISPER_DEVICE || "auto",
+  ]);
+  const result = JSON.parse(output);
+  if (!result.chunks?.length) throw new Error("Faster-Whisper không tạo được timestamp.");
+  return result;
+}
+async function transcribeWithLegacyWhisper(audioPath, language, chunkDir, segmentSeconds) {
+  await mkdir(chunkDir, { recursive: true });
+  await run(["-y", "-hide_banner", "-loglevel", "error", "-i", audioPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment", "-segment_time", String(segmentSeconds), "-reset_timestamps", "1", path.join(chunkDir, "part-%04d.wav")]);
+  const chunkFiles = (await readdir(chunkDir)).filter((name) => name.endsWith(".wav")).sort();
+  if (!chunkFiles.length) throw new Error("FFmpeg không tách được voice thành các đoạn xử lý.");
+  const transcriber = await getWhisper(), allChunks = [], texts = [];
+  for (let index = 0; index < chunkFiles.length; index++) {
+    const wav = new wavefile.WaveFile(await readFile(path.join(chunkDir, chunkFiles[index])));
+    wav.toBitDepth("32f"); wav.toSampleRate(16000);
+    let samples = wav.getSamples(); if (Array.isArray(samples)) samples = samples[0];
+    const options = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
+    if (language && language !== "auto") options.language = language;
+    const output = await transcriber(samples, options), offset = index * segmentSeconds;
+    if (output.text?.trim()) texts.push(output.text.trim());
+    for (const chunk of output.chunks || []) {
+      const start = offset + Number(chunk.timestamp?.[0] || 0), end = offset + Number(chunk.timestamp?.[1] ?? chunk.timestamp?.[0] ?? 0);
+      if (chunk.text?.trim() && end > start) allChunks.push({ text: chunk.text.trim(), start, end });
+    }
+  }
+  return { engine: "whisper-js-fallback", device: "cpu", model: "tiny", language: language || "auto", text: texts.join(" "), chunks: allChunks, audioParts: chunkFiles.length };
+}
 app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "Chưa có file voice." });
   const chunkDir = `${req.file.path}-chunks`, segmentSeconds = 300;
   try {
     const result = await enqueueTranscription(async () => {
-      await mkdir(chunkDir, { recursive: true });
-      await run(["-y", "-hide_banner", "-loglevel", "error", "-i", req.file.path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "segment", "-segment_time", String(segmentSeconds), "-reset_timestamps", "1", path.join(chunkDir, "part-%04d.wav")]);
-      const chunkFiles = (await readdir(chunkDir)).filter((name) => name.endsWith(".wav")).sort();
-      if (!chunkFiles.length) throw new Error("FFmpeg không tách được voice thành các đoạn xử lý.");
-      const transcriber = await getWhisper(), language = req.body.language, allChunks = [], texts = [];
-      for (let index = 0; index < chunkFiles.length; index++) {
-        const wav = new wavefile.WaveFile(await readFile(path.join(chunkDir, chunkFiles[index])));
-        wav.toBitDepth("32f"); wav.toSampleRate(16000);
-        let samples = wav.getSamples(); if (Array.isArray(samples)) samples = samples[0];
-        const options = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 };
-        if (language && language !== "auto") options.language = language;
-        const output = await transcriber(samples, options), offset = index * segmentSeconds;
-        if (output.text?.trim()) texts.push(output.text.trim());
-        for (const chunk of output.chunks || []) {
-          const start = offset + Number(chunk.timestamp?.[0] || 0), end = offset + Number(chunk.timestamp?.[1] ?? chunk.timestamp?.[0] ?? 0);
-          if (chunk.text?.trim() && end > start) allChunks.push({ text: chunk.text.trim(), start, end });
-        }
+      const language = req.body.language || "auto";
+      try {
+        return await transcribeWithFasterWhisper(req.file.path, language);
+      } catch (fasterError) {
+        console.warn(`Faster-Whisper fallback: ${fasterError instanceof Error ? fasterError.message : fasterError}`);
+        return transcribeWithLegacyWhisper(req.file.path, language, chunkDir, segmentSeconds);
       }
-      return { language: language || "auto", text: texts.join(" "), chunks: allChunks, audioParts: chunkFiles.length };
     });
     res.json(result);
   } catch (error) {
@@ -488,7 +513,11 @@ app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
     void rm(chunkDir, { recursive: true, force: true });
   }
 });
-app.get("/api/health", (_req, res) => res.json({ ok: true, engine: "FFmpeg" }));
+app.get("/api/health", async (_req, res) => {
+  let transcriptionEngine = "whisper-js-fallback";
+  try { await stat(fasterWhisperPython); transcriptionEngine = "faster-whisper"; } catch {}
+  res.json({ ok: true, engine: "FFmpeg", transcriptionEngine });
+});
 const port = Number(process.env.MATCHCUT_PORT) || 4173;
 app.listen(port, () =>
   console.log(`MatchCut FFmpeg: http://localhost:${port}`),
