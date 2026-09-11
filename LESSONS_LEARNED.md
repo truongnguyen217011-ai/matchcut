@@ -203,3 +203,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Khi bấm Lưu kênh, Intro, Outro, Overlay/Subscribe, Watermark và nhạc nền phải được chép vào `data/profile-assets/<profileId>` cùng manifest. Giao diện lưu metadata trong profile và hiển thị rõ tên tệp đã lưu.
 - Khi tạo job hoặc render thủ công mà người dùng không chọn tệp mới, backend phải tự nạp tài sản đã lưu theo `profileId`. Mỗi job vẫn sao chép tài sản vào thư mục input riêng để job không hỏng nếu cấu hình kênh được thay đổi về sau.
 - Khi đổi kênh phải xóa giá trị file input đang tạm chọn để không mang nhầm tệp chưa lưu từ kênh cũ sang kênh mới.
+
+### 29. Chạy hàng loạt phải có tiến độ trực quan theo video hiện tại
+
+- Không chỉ ghi log hoặc phần trăm nhỏ trong danh sách. Bảng tiến độ phải có tên video đang xử lý, vị trí `Video X/Y`, công đoạn hiện tại, phần trăm lớn và thanh tiến độ.
+- Dữ liệu hiển thị phải lấy từ `job.progress` và `job.stage` của backend, cập nhật cùng nhịp polling; không dùng thanh chạy giả theo thời gian.
+- Khi lỗi, giữ nguyên tên video, phần trăm cuối và công đoạn lỗi. Khi hoàn tất, chỉ hiển thị 100% sau khi backend đã render và kiểm tra MP4.

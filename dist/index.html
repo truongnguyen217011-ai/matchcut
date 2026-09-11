@@ -9,12 +9,12 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.5</span></div></div><div class="status"><i></i>Queue Guard · Per-channel Library · NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.6</span></div></div><div class="status"><i></i>Live Job Progress · Per-channel Library · NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
       <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chọn đồng thời các file voice và SRT cùng tên.</div></div><div class="batch-actions"><label class="batch-add"><input id="voiceInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.srt,application/x-subrip" multiple>＋ Thêm voice + SRT</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
-      <div class="batch-progress"><div class="progress-title">Tiến trình tự động <span id="batchCounter">0/0</span></div><pre id="batchLog">Sẵn sàng. Thiết lập kênh và footage, sau đó thêm voice để xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
+      <div class="batch-progress"><div class="progress-title">Tiến trình tự động <span id="batchCounter">0/0</span></div><div id="currentJobProgress" class="current-job-progress idle"><div class="current-job-top"><span id="currentJobPosition">Chưa chạy</span><strong id="currentJobPercent">0%</strong></div><div id="currentJobName">Chưa có video đang xử lý</div><div class="current-job-track"><i id="currentJobBar"></i></div><small id="currentJobStage">Sẵn sàng nhận hàng đợi</small></div><pre id="batchLog">Sẵn sàng. Thiết lập kênh và footage, sau đó thêm voice để xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
     </div>
   </section>
   <main>

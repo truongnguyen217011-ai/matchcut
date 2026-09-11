@@ -723,18 +723,33 @@ function appendUsedMedia(form, sceneList) {
   return { indexByAsset };
 }
 
-let batchFiles = [], batchRunning = false, batchStopRequested = false;
+let batchFiles = [], batchRunning = false, batchStopRequested = false, currentBatchItem = null, currentBatchPosition = 0, currentBatchTotal = 0;
 const batchLog = (message) => { const box = $("#batchLog"); box.textContent += `\n[${new Date().toLocaleTimeString("vi-VN")}] ${message}`; box.scrollTop = box.scrollHeight; };
 const safeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
+function renderCurrentJobProgress() {
+  const active = currentBatchItem || batchFiles.find((item) => ["queued", "transcribing", "rendering"].includes(item.serverStatus));
+  const card = $("#currentJobProgress");
+  if (!active) {
+    card.className = "current-job-progress idle"; $("#currentJobPosition").textContent = "Chưa chạy"; $("#currentJobPercent").textContent = "0%"; $("#currentJobName").textContent = "Chưa có video đang xử lý"; $("#currentJobBar").style.width = "0%"; $("#currentJobStage").textContent = "Sẵn sàng nhận hàng đợi"; return;
+  }
+  const progress = Math.max(0, Math.min(100, Number(active.progress || 0))), failed = active.serverStatus === "failed" || active.status === "Lỗi", completed = active.serverStatus === "completed" || active.status === "Hoàn tất";
+  card.className = `current-job-progress${failed ? " error" : completed ? " completed" : ""}`;
+  const recoveredQueue = batchFiles.filter((item) => ["queued", "transcribing", "rendering"].includes(item.serverStatus)), recoveredIndex = recoveredQueue.indexOf(active);
+  $("#currentJobPosition").textContent = currentBatchTotal ? `Video ${currentBatchPosition}/${currentBatchTotal}` : recoveredIndex >= 0 ? `Video ${recoveredIndex + 1}/${recoveredQueue.length}` : "Job đang chạy trên backend";
+  $("#currentJobPercent").textContent = `${Math.round(progress)}%`;
+  $("#currentJobName").textContent = active.file?.name || active.fileName || active.name || "Video chưa đặt tên";
+  $("#currentJobBar").style.width = `${progress}%`;
+  $("#currentJobStage").textContent = failed ? `Lỗi tại: ${active.stage || "Không xác định"} · ${active.error || "Xem nhật ký bên dưới"}` : completed ? "Đã render và kiểm tra MP4 hoàn chỉnh" : (active.stage || active.status || "Đang chuẩn bị");
+}
 function renderBatchList() {
   const list = $("#batchList");
   list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.subtitleFile ? "SRT sẵn" : "Whisper dự phòng"}</span>${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Thêm voice và SRT cùng tên ở bước 01.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
-  updateBatchButtons();
+  updateBatchButtons(); renderCurrentJobProgress();
 }
 function isRunnableBatchItem(item) { return Boolean(item && item.serverStatus !== "completed" && item.status !== "Hoàn tất" && (item.jobId || (item.file && assets.length))); }
-function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some(isRunnableBatchItem); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || !canRun; $("#runBatch").disabled = batchRunning || !canRun; $("#stopBatch").disabled = !batchRunning; }
+function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some(isRunnableBatchItem), backendBusy = batchFiles.some((item) => ["queued", "transcribing", "rendering"].includes(item.serverStatus)); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || backendBusy || !canRun; $("#runBatch").disabled = batchRunning || backendBusy || !canRun; $("#stopBatch").disabled = !batchRunning; }
 $("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
 $("#clearBatch").onclick = async () => {
@@ -755,14 +770,14 @@ $("#clearBatch").onclick = async () => {
 $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu cầu dừng. File hiện tại sẽ hoàn tất rồi hàng đợi dừng lại."); };
 async function processBatchItem(item) {
   if (!item.jobId) {
-    item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; renderBatchList();
+    item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; item.progress = 1; renderBatchList();
     const form = new FormData(); form.append("voice", item.file); if (item.subtitleFile) form.append("subtitle", item.subtitleFile);
     let uploadIndex = 0;
     const assetSpecs = assets.map((asset) => { if (asset.file) { const index = uploadIndex++; form.append("media", asset.file); return { name:asset.name, type:asset.type, uploadIndex:index }; } return { name:asset.name, type:asset.type, localPath:asset.localPath, uploadIndex:null }; });
     for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) form.append(field,file); }
     form.append("assets", JSON.stringify(assetSpecs)); form.append("settings", JSON.stringify(effectSettings())); form.append("selectionMode", $("#mediaSelectionMode").value); form.append("profileId", activeProfile);
     const response = await fetchWithRetry("/api/jobs", { method:"POST", body:form }, `lưu job ${item.file.name}`), job = await response.json();
-    if (!response.ok) throw new Error(job.error || "Không lưu được job"); item.jobId = job.id; item.fileName = job.name; item.logCount = 0; batchLog(`Đã lưu job ${job.id}. Backend sẽ tự tiếp tục nếu khởi động lại.`);
+    if (!response.ok) throw new Error(job.error || "Không lưu được job"); item.jobId = job.id; item.fileName = job.name; item.logCount = 0; item.progress = Math.max(2, Number(job.progress || 0)); batchLog(`Đã lưu job ${job.id}. Backend sẽ tự tiếp tục nếu khởi động lại.`);
   } else if (item.serverStatus === "failed") {
     const response = await fetch(`/api/jobs/${item.jobId}/retry`, { method:"POST" }); if (!response.ok) throw new Error("Không thể tiếp tục job lỗi."); item.logCount = 0;
   }
@@ -783,12 +798,14 @@ async function runBatch(items) {
   if (!runnableItems.length) { batchLog("Chưa chọn voice hợp lệ để chạy. Hãy chọn ít nhất một voice và bảo đảm kho tư liệu đã sẵn sàng."); return; }
   batchRunning = true; batchStopRequested = false; updateBatchButtons();
   let processedCount = 0;
-  for (const item of runnableItems) {
+  currentBatchTotal = runnableItems.length;
+  for (let index = 0; index < runnableItems.length; index += 1) {
+    const item = runnableItems[index]; currentBatchItem = item; currentBatchPosition = index + 1; renderCurrentJobProgress();
     if (batchStopRequested) break;
     try { await processBatchItem(item); processedCount += 1; }
-    catch (error) { item.status = "Lỗi"; item.error = error.message; renderBatchList(); batchLog(`✕ ${item.file?.name || item.fileName}: ${error.message}`); }
+    catch (error) { item.status = "Lỗi"; item.serverStatus = "failed"; item.error = error.message; renderBatchList(); batchLog(`✕ ${item.file?.name || item.fileName}: ${error.message}`); }
   }
-  batchRunning = false; updateBatchButtons();
+  batchRunning = false; updateBatchButtons(); renderCurrentJobProgress();
   if (batchStopRequested) batchLog("Đã dừng theo dõi. Backend vẫn bảo toàn job hiện tại.");
   else if (processedCount > 0) batchLog(`Đã xử lý xong ${processedCount} file trong hàng đợi.`);
   else batchLog("Hàng đợi chưa xử lý được file nào. Hãy xem lỗi của từng file ở danh sách bên trái.");
