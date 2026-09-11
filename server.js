@@ -128,7 +128,7 @@ function probeHasAudio(file) {
     child.on("close", () => resolve(/Stream #.*Audio:/i.test(details)));
   });
 }
-let nvencUsable;
+let nvencUsable, cudaPipelineUsable;
 async function hasNvenc() {
   if (nvencUsable !== undefined) return nvencUsable;
   try {
@@ -140,6 +140,17 @@ async function hasNvenc() {
   }
   return nvencUsable;
 }
+async function hasCudaPipeline() {
+  if (cudaPipelineUsable !== undefined) return cudaPipelineUsable;
+  try {
+    await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:d=0.1", "-vf", "format=nv12,hwupload_cuda,scale_cuda=256:144:interp_algo=lanczos,hwdownload,format=nv12", "-frames:v", "1", "-f", "null", "NUL"]);
+    cudaPipelineUsable = true;
+  } catch {
+    cudaPipelineUsable = false;
+  }
+  return cudaPipelineUsable;
+}
+const isCudaPipelineError = (error) => /cuda|cuvid|nvdec|device setup failed|hardware frames|unsupported device|function not implemented/i.test(error instanceof Error ? error.message : String(error));
 async function runVideoEncode(baseArgs, output, options = {}) {
   if (await hasNvenc()) {
     try {
@@ -148,6 +159,7 @@ async function runVideoEncode(baseArgs, output, options = {}) {
       return "h264_nvenc";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (options.strictGpu && isCudaPipelineError(error)) throw error;
       if (!/nvenc|cuda|no capable devices|error while opening encoder/i.test(message)) throw error;
       console.warn(`NVENC fallback: ${message}`);
       nvencUsable = false;
@@ -265,8 +277,11 @@ async function findOverlayImages(folder) {
   }
   return results;
 }
-function sceneVideoFilter(scene, settings, width, height, duration, transition) {
-  let vf = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
+function sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode = false) {
+  const scaler = gpuMode && scene.mediaType !== "image"
+    ? `scale_cuda=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2:interp_algo=lanczos,hwdownload,format=nv12,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+    : `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
+  let vf = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scaler},setsar=1,fps=30`;
   const darkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
   if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
   if (transition === "fade") vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
@@ -285,7 +300,8 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition) 
   if (transition === "flash") vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
   return `${vf},setsar=1,format=yuv420p`;
 }
-async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset = 0, outputName = "matchcut-output.mp4" }) {
+async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset = 0, outputName = "matchcut-output.mp4", gpuMode }) {
+  if (gpuMode === undefined) gpuMode = await hasCudaPipeline();
   if (scenes.length > 120) throw new Error(`Timeline ${scenes.length} cảnh vượt ngưỡng single-pass an toàn 120 cảnh.`);
   const randomTransitions = settings.fastRender !== false ? ["none", "fade", "zoom-in", "zoom-out", "flash"] : ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
   const sourceMap = new Map(), resolvedScenes = [];
@@ -301,16 +317,22 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   if ([...sourceMap.keys()].join("").length > 24000) throw new Error("Danh sách đường dẫn quá dài cho single-pass.");
 
   const inputArgs = ["-y", "-hide_banner", "-loglevel", "error"], filters = [];
+  const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
   let inputIndex = 0;
   for (const entry of sourceMap.values()) {
     entry.inputIndex = inputIndex++;
-    inputArgs.push(entry.type === "image" ? "-loop" : "-stream_loop", entry.type === "image" ? "1" : "-1", "-i", entry.source);
+    if (gpuMode && entry.type !== "image") inputArgs.push("-hwaccel", "cuda", "-hwaccel_output_format", "cuda");
+    if (entry.type === "image") inputArgs.push("-loop", "1", "-t", totalDuration.toFixed(3), "-i", entry.source);
+    else {
+      const sourceDuration = Math.max(0.05, await probeMediaDuration(entry.source));
+      const loopCount = Math.max(0, Math.ceil(totalDuration / sourceDuration) - 1);
+      inputArgs.push("-stream_loop", String(loopCount), "-i", entry.source);
+    }
     if (entry.uses.length > 1) {
       entry.labels = entry.uses.map((_, branch) => `src${entry.inputIndex}_${branch}`);
       filters.push(`[${entry.inputIndex}:v]split=${entry.uses.length}${entry.labels.map((label) => `[${label}]`).join("")}`);
     } else entry.labels = [`${entry.inputIndex}:v`];
   }
-  const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
   const voiceIndex = inputIndex++;
   if (timeOffset > 0) inputArgs.push("-ss", timeOffset.toFixed(3));
   inputArgs.push("-t", totalDuration.toFixed(3), "-i", voice.path);
@@ -335,7 +357,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     }
     previousTransition = transition;
     const duration = Math.max(0.5, Number(scene.end) - Number(scene.start));
-    filters.push(`[${entry.labels[branch]}]${sceneVideoFilter(scene, settings, width, height, duration, transition)}[scene${index}]`);
+    filters.push(`[${entry.labels[branch]}]${sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode)}[scene${index}]`);
   });
   filters.push(`${resolvedScenes.map((_, index) => `[scene${index}]`).join("")}concat=n=${resolvedScenes.length}:v=1:a=0[timeline]`);
 
@@ -389,12 +411,19 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   const graphPath = path.join(dir, "single-pass.ffgraph");
   await writeFile(graphPath, filters.join(";\n"), "utf8");
   const output = path.join(dir, outputName);
-  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false });
-  return { output, encoder };
+  try {
+    const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-t", totalDuration.toFixed(3), "-frames:v", String(Math.max(1, Math.ceil(totalDuration * 30))), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false, strictGpu: gpuMode });
+    return { output, encoder, acceleration: gpuMode ? "nvdec-scale_cuda-nvenc" : "cpu-filters-nvenc" };
+  } catch (error) {
+    if (!gpuMode || !isCudaPipelineError(error)) throw error;
+    console.warn(`CUDA pipeline fallback: ${error instanceof Error ? error.message : error}`);
+    await rm(output, { force: true });
+    return renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset, outputName, gpuMode: false });
+  }
 }
 async function renderChunkedSinglePass(options) {
   const { dir, scenes, captionScenes = scenes, onProgress } = options, chunkSize = 24, outputs = [], chunkCount = Math.ceil(scenes.length / chunkSize);
-  let encoder = "h264_nvenc";
+  let encoder = "h264_nvenc", acceleration = "unknown";
   for (let index = 0; index < scenes.length; index += chunkSize) {
     const chunkNumber = outputs.length + 1;
     await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}`, 60 + Math.floor(((chunkNumber - 1) / chunkCount) * 30));
@@ -404,14 +433,14 @@ async function renderChunkedSinglePass(options) {
       .filter((scene) => Number(scene.end) > offset && Number(scene.start) < end)
       .map((scene) => ({ ...scene, start: Math.max(0, Number(scene.start) - offset), end: Math.min(duration, Number(scene.end) - offset) }));
     const result = await renderSinglePass({ ...options, scenes: localScenes, captionScenes: localCaptions, timeOffset: offset, outputName: `fast-chunk-${String(outputs.length).padStart(3, "0")}.mp4` });
-    outputs.push(result.output); encoder = result.encoder;
+    outputs.push(result.output); encoder = result.encoder; acceleration = result.acceleration;
   }
   await onProgress?.("Ghép các khối MP4", 92);
   const concatFile = path.join(dir, "fast-chunks.txt");
   await writeFile(concatFile, outputs.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join("\n"), "utf8");
   const output = path.join(dir, "matchcut-output.mp4");
   await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", output]);
-  return { output, encoder, pipeline: `chunked-single-pass-${outputs.length}` };
+  return { output, encoder, acceleration, pipeline: `chunked-single-pass-${outputs.length}` };
 }
 app.post("/api/pick-folder", async (_req, res) => {
   try {
@@ -519,6 +548,7 @@ app.post(
             fileName: path.basename(savedPath),
             overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
             renderEncoder: singlePass.encoder,
+            acceleration: singlePass.acceleration,
             renderPipeline: singlePass.pipeline || "single-pass",
             settings,
           });
@@ -905,7 +935,7 @@ async function processPersistentJob(job) {
     });
     const scenes = job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
     renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("captionScenes", JSON.stringify(captionScenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1"); renderForm.append("jobId", job.id);
-    addJobLog(job, `Render nhanh ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng single-pass NVENC.`); await savePersistentJob(job);
+    addJobLog(job, `Render nhanh ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng NVDEC/CUDA → filter giữ nguyên hiệu ứng → NVENC.`); await savePersistentJob(job);
     const renderHeartbeat = setInterval(() => {
       if (job.status !== "rendering") return;
       job.updatedAt = new Date().toISOString();
@@ -914,7 +944,7 @@ async function processPersistentJob(job) {
     try { job.output = await localPost("/api/render", renderForm); }
     finally { clearInterval(renderHeartbeat); }
     job.status = "completed"; job.stage = "Hoàn tất"; job.progress = 100; job.completedAt = new Date().toISOString();
-    addJobLog(job, `Đã xuất và kiểm tra hoàn tất: ${job.output.savedPath}`); await savePersistentJob(job);
+    addJobLog(job, `Đã xuất bằng ${job.output.acceleration || job.output.renderEncoder} và kiểm tra hoàn tất: ${job.output.savedPath}`); await savePersistentJob(job);
   } catch (error) {
     job.status = "failed"; job.error = error instanceof Error ? error.message : String(error); job.failedAt = new Date().toISOString();
     addJobLog(job, `Lỗi tại ${job.stage}: ${job.error}`); await savePersistentJob(job);
@@ -1021,7 +1051,7 @@ async function cleanupPersistentJobs() {
 app.get("/api/health", async (_req, res) => {
   let transcriptionEngine = "whisper-js-fallback";
   try { await stat(fasterWhisperPython); transcriptionEngine = "faster-whisper"; } catch {}
-  res.json({ ok: true, engine: "FFmpeg", transcriptionEngine, renderEncoder: await hasNvenc() ? "h264_nvenc" : "libx264" });
+  res.json({ ok: true, engine: "FFmpeg", transcriptionEngine, renderEncoder: await hasNvenc() ? "h264_nvenc" : "libx264", gpuPipeline: await hasCudaPipeline() ? "NVDEC + scale_cuda + NVENC" : "CPU fallback" });
 });
 await loadPersistentJobs();
 app.listen(port, () => { console.log(`MatchCut FFmpeg: http://localhost:${port}`); void pumpPersistentJobs(); });

@@ -216,3 +216,20 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Phải lưu bền vững `startedAt`, `completedAt` và `failedAt` trong job để tải lại giao diện hoặc khởi động lại backend vẫn giữ đúng số liệu.
 - Khi đang chạy, thời gian đã chạy phải cập nhật theo đồng hồ thật. Khi hoàn tất hoặc lỗi, đóng băng số liệu và hiển thị giờ kết thúc cùng tổng phút/giây.
 - Chỉ ghi nhận hoàn thành sau khi MP4 đã render và vượt qua bước kiểm tra giải mã, không lấy thời điểm FFmpeg mới dừng làm kết quả giả.
+
+### 31. NVENC không có nghĩa toàn bộ pipeline đang chạy trên GPU
+
+- `h264_nvenc` chỉ tăng tốc mã hóa; nếu vẫn dùng `scale`, giải mã mặc định và các filter phần mềm thì CPU vẫn là nút thắt.
+- Với footage video, ưu tiên NVDEC/CUDA để giải mã, `scale_cuda` để resize, chỉ `hwdownload` một lần tại ranh giới bắt buộc bởi ASS, waveform hoặc hiệu ứng chưa có CUDA, sau đó mã hóa bằng NVENC.
+- Không được bỏ intro/outro, phụ đề, overlay, watermark, waveform hoặc đổi hình thức hiệu ứng để báo tốc độ đẹp. Codec/driver không hỗ trợ CUDA phải tự fallback sang pipeline CPU hiện có và ghi rõ acceleration thực tế vào kết quả.
+- Kiểm tra tăng tốc bằng workload thật: GPU decoder/encoder phải hoạt động, file đầu ra phải tăng, thời lượng đúng và giải mã MP4 hoàn chỉnh.
+
+### 32. Nguồn lặp vô hạn phải được chặn thời lượng ngay tại input
+
+- `trim` trong filter graph không bảo đảm FFmpeg ngừng đọc một input dùng `-stream_loop -1`; với nhiều nguồn, scheduler có thể tiếp tục giải mã dù timeline đã đủ hình.
+- Mọi video/ảnh lặp trong một khối phải có `-t <thời lượng khối>` đặt trước `-i`. Không chỉ dựa vào `trim`, `concat` hoặc `-shortest` ở output.
+- Đồng thời đặt `-t <thời lượng khối>` ở output làm giới hạn cứng; waveform/overlay hoặc nguồn loop có thể khiến `-shortest` không nhận được EOF như mong đợi.
+- Với đầu ra 30 fps, thêm giới hạn frame `ceil(duration × 30)`; mốc `-t` có thể chờ frame tiếp theo khi frame cuối nằm ngay trước thời lượng đích.
+- Không dùng `-stream_loop -1` cho footage video qua filter graph phức tạp. Probe thời lượng nguồn và đặt số vòng hữu hạn `ceil(thời lượng khối / thời lượng nguồn) - 1` để vẫn lặp đủ hình nhưng bảo đảm input phát EOF.
+- Dùng bài test 3 giây để chặn hồi quy: tiến trình phải tự thoát, encoder phải tạo trailer MP4 và toàn bộ file phải giải mã được.
+- Với waveform, nguồn `color`/`gradients` là vô hạn. `alphamerge` bắt buộc dùng `shortest=1`; nếu không nó giữ frame mask cuối và khiến render không bao giờ nhận EOF.
