@@ -157,3 +157,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - `\\ko` có thể ẩn glyph nhưng `BorderStyle=3` vẫn vẽ BackColour trên toàn vùng chữ chưa hiện. Typewriter có nền phải được tạo bằng các event tích lũy nối tiếp (`A` → `AB` → `ABC`), để mỗi event chỉ chứa đúng phần chữ và nền được phép nhìn thấy.
 - Với libass, `BorderStyle=3` lấy `OutlineColour` làm màu hộp và `BackColour` chủ yếu làm bóng. Ánh xạ màu preset phải theo hành vi render thật này; không được suy luận từ tên trường ASS.
 - Với `BorderStyle=3`, không đặt `Outline=0`: libass có thể vẽ hộp đen mặc định thay vì màu `OutlineColour`. Preset dạng thẻ phải giữ padding tối thiểu 1.
+
+### 22. Vận hành như kỹ sư chịu trách nhiệm toàn bộ pipeline
+
+- Trước mỗi thay đổi hoặc lần chạy sản xuất, phải chủ động kiểm tra toàn chuỗi: đầu vào voice/SRT, ngôn ngữ, timestamp, kho tư liệu, dung lượng ổ đĩa, encoder GPU/CPU, FFmpeg, tiến trình hàng đợi, khả năng tiếp tục sau lỗi và khả năng giải mã MP4 đầu ra.
+- Không chỉ sửa lỗi người dùng vừa nhìn thấy. Phải dự đoán lỗi có khả năng xuất hiện ở video dài, chạy hàng loạt, nhiều hiệu ứng, đường dẫn ổ mạng, thiếu file, mất kết nối giao diện và backend khởi động lại.
+- Mọi ước lượng tốc độ phải dựa trên bài test gần với cấu hình sản xuất thực tế. Chỉ báo hoàn thành sau khi MP4 render xong, tồn tại đúng nơi, có thời lượng đúng và giải mã toàn bộ với exit code 0.
+- Khi có lỗi, phải chỉ rõ công đoạn, nguyên nhân đọc được từ log, phần có thể tiếp tục và phần cần chạy lại; ưu tiên tiếp tục từ checkpoint thay vì làm lại toàn bộ video.
