@@ -303,16 +303,17 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   }
   const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
   const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
-  const addWave = (source, color, xPercent, yPercent, name) => {
+  const addWave = (source, color, opacityPercent, xPercent, yPercent, name) => {
     if (!source) return;
     const safeColor = String(color || "#ffffff").replace("#", "");
+    const opacity = Math.min(100, Math.max(0, Number(opacityPercent ?? 100))) / 100;
     const centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100;
     const x = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), y = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba[${name}]`);
+    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[${name}]`);
     filters.push(`[${current}][${name}]overlay=${x}:${y}:shortest=1[layer${++layer}]`); current = `layer${layer}`;
   };
-  if (settings.waveformEnabled && musicIndex !== null) addWave("musicWaveSource", settings.waveformColor, settings.waveformX, settings.waveformY, "musicwave");
-  if (settings.voiceWaveformEnabled) addWave("voiceWaveSource", settings.voiceWaveformColor, settings.voiceWaveformX, settings.voiceWaveformY, "voicewave");
+  if (settings.waveformEnabled && musicIndex !== null) addWave("musicWaveSource", settings.waveformColor, settings.waveformOpacity, settings.waveformX, settings.waveformY, "musicwave");
+  if (settings.voiceWaveformEnabled) addWave("voiceWaveSource", settings.voiceWaveformColor, settings.voiceWaveformOpacity, settings.voiceWaveformX, settings.voiceWaveformY, "voicewave");
   if (watermarkIndex !== null) {
     const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100, speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12));
     const rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "";
@@ -610,14 +611,14 @@ app.post(
         }
         const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
           waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
-        const addWaveform = (inputIndex, color, xPercent, yPercent, name) => {
+        const addWaveform = (inputIndex, color, opacityPercent, xPercent, yPercent, name) => {
           if (inputIndex === null) return;
-          const safeColor = String(color || "#ffffff").replace("#", ""), centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100, waveX = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), waveY = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba[${name}]`);
+          const safeColor = String(color || "#ffffff").replace("#", ""), opacity = Math.min(100, Math.max(0, Number(opacityPercent ?? 100))) / 100, centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100, waveX = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), waveY = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
+          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[${name}]`);
           filters.push(`[${current}][${name}]overlay=${waveX}:${waveY}:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
         };
-        addWaveform(musicWaveformInputIndex, settings.waveformColor, settings.waveformX, settings.waveformY, "musicwave");
-        addWaveform(voiceWaveformInputIndex, settings.voiceWaveformColor, settings.voiceWaveformX, settings.voiceWaveformY, "voicewave");
+        addWaveform(musicWaveformInputIndex, settings.waveformColor, settings.waveformOpacity, settings.waveformX, settings.waveformY, "musicwave");
+        addWaveform(voiceWaveformInputIndex, settings.voiceWaveformColor, settings.voiceWaveformOpacity, settings.voiceWaveformX, settings.voiceWaveformY, "voicewave");
         if (watermarkInputIndex !== null) {
           const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100,
             speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),

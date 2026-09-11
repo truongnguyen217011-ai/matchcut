@@ -134,3 +134,8 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 - Job đã lưu `localPath` nhưng backend mới khởi động có `allowedLocalMedia` rỗng sẽ báo không tìm thấy tư liệu dù file vẫn tồn tại.
 - Khi nạp `job.json`, đăng ký lại mọi `asset.localPath` vào danh sách đường dẫn hợp lệ trước khi tự tiếp tục render.
+
+### 19. Mỗi loại sóng âm phải có độ đậm riêng
+
+- Sóng nhạc nền và sóng voice phải có thanh phần trăm độ đậm/độ trong suốt riêng, mặc định 100% để không tự thay đổi cấu hình cũ.
+- Giá trị phải được xem trước ngay trên giao diện, lưu theo cấu hình kênh và áp dụng vào alpha của lớp sóng trong cả pipeline single-pass lẫn pipeline dự phòng.
