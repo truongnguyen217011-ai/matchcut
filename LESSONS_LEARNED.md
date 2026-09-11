@@ -106,6 +106,31 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 ### 14. Filter graph và lỗi encoder phải được phân loại chính xác
 
-- Timeline hàng trăm cảnh có thể làm single-pass cạn bộ nhớ; từ 121 cảnh trở lên chuyển sang pipeline hai lượt an toàn.
+- Timeline hàng trăm nguồn trong một tiến trình single-pass có thể làm FFmpeg dùng hơn 20 GB RAM. Không mở toàn bộ nguồn cùng lúc và không quay lại pipeline hai lượt vốn chậm.
+- Tách timeline hình xuống tối đa 96 cảnh, rồi render single-pass theo từng khối 24 cảnh. Cuối cùng concat bằng stream-copy để mỗi frame chỉ được mã hóa đúng một lần.
 - Mọi nhánh hiệu ứng/chuyển cảnh phải chuẩn hóa `setsar=1` trước khi ghép để tránh lỗi SAR không đồng nhất.
 - Chỉ vô hiệu NVENC khi stderr thực sự báo lỗi NVENC/CUDA. Lỗi filter, nguồn hoặc SAR phải được báo đúng nguyên nhân, không âm thầm chuyển CPU.
+
+### 15. Không được cho nhiều lượt lưu job dùng chung một file tạm
+
+- Triệu chứng: render gần hoàn tất thì Node crash với `ENOENT rename job.json.tmp`, FFmpeg bị kết thúc và MP4 nhiều GB không có `moov atom` nên không thể phát.
+- Nguyên nhân: heartbeat và bước cập nhật trạng thái gọi `savePersistentJob` đồng thời, cùng ghi/đổi tên một đường dẫn `job.json.tmp`.
+- Cách phòng tránh: tuần tự hóa ghi theo từng job hoặc dùng tên file tạm duy nhất cho mỗi lượt ghi, sau đó atomic rename; lỗi lưu trạng thái nền không được làm chết tiến trình Node.
+- Kiểm thử: cố ý gọi nhiều lần lưu song song trong khi render dài, xác nhận backend không crash và MP4 cuối có `moov atom`, đúng Duration, giải mã toàn bộ với exit code 0.
+
+### 16. Hiệu ứng ASS không được tách đôi mã điều khiển
+
+- `\\N` là mã xuống dòng nguyên tử của ASS. Typewriter/Karaoke không được chèn `\\k` giữa dấu gạch chéo và chữ `N`, nếu không video sẽ hiện lệnh kỹ thuật thành chữ.
+- Tách nội dung thành token, giữ nguyên `\\N`, chỉ gắn thời lượng karaoke vào ký tự hoặc từ hiển thị.
+- Kiểm thử cả chuỗi ASS sinh ra và khung hình thật đúng vị trí từng xảy ra lỗi.
+
+### 17. Benchmark render phải dùng voice dài và toàn bộ hiệu ứng thật
+
+- Không suy ra tốc độ 40 phút từ clip thử vài giây. Phải dùng voice dài, kho tư liệu trên ổ thực tế, phụ đề, overlay, waveform và cấu hình kênh thật.
+- Mốc kiểm chứng 11/09/2026: voice 44:42, 560 timestamp, 94 cảnh hình, 238 cue phụ đề, bốn khối single-pass NVENC. Render và xuất mất 16:55; cộng 57 giây Faster-Whisper là 17:52. Quy đổi video 40 phút là khoảng 15:59.
+- MP4 đầu ra 1920x1080, SAR 1:1, dài 44:42.20; giải mã đủ 80.463 frame với exit code 0.
+
+### 18. Khôi phục job phải khôi phục cả quyền dùng đường dẫn tư liệu
+
+- Job đã lưu `localPath` nhưng backend mới khởi động có `allowedLocalMedia` rỗng sẽ báo không tìm thấy tư liệu dù file vẫn tồn tại.
+- Khi nạp `job.json`, đăng ký lại mọi `asset.localPath` vào danh sách đường dẫn hợp lệ trước khi tự tiếp tục render.

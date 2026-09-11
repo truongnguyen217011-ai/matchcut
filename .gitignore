@@ -1,6 +1,7 @@
 node_modules/
 .venv-whisper/
 .cache-whisper/
+.qa/
 __pycache__/
 *.pyc
 data/runtime-jobs/

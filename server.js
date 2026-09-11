@@ -19,6 +19,9 @@ import { fileURLToPath } from "node:url";
 import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
+import { parseSrt } from "./srt-utils.js";
+import { applyAssTextEffect } from "./ass-effects.js";
+import { compactVisualScenes } from "./render-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -106,10 +109,11 @@ async function hasNvenc() {
   }
   return nvencUsable;
 }
-async function runVideoEncode(baseArgs, output) {
+async function runVideoEncode(baseArgs, output, options = {}) {
   if (await hasNvenc()) {
     try {
-      await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "hq", "-rc", "vbr", "-cq", "23", "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
+      const preset = options.fast ? "p2" : "p4";
+      await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", preset, "-tune", "hq", "-rc", "vbr", "-cq", "23", "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
       return "h264_nvenc";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -180,29 +184,7 @@ function createAss(scenes, settings) {
   const events = subtitleCues
     .map((scene) => {
       const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
-      let text = `${placement}${content}`;
-      if (settings.textEffect === "fade") text = `{\\fad(250,180)}${text}`;
-      if (settings.textEffect === "pop")
-        text = `{\\fscx70\\fscy70\\t(0,250,\\fscx100\\fscy100)}${text}`;
-      if (settings.textEffect === "karaoke") {
-        const words = content.split(/\s+/),
-          centis = Math.max(
-            1,
-            Math.round(
-              ((Number(scene.end) - Number(scene.start)) * 100) /
-                Math.max(1, words.length),
-            ),
-          );
-        text = `${placement}${words.map((word) => `{\\k${centis}}${word}`).join(" ")}`;
-      }
-      if (settings.textEffect === "typewriter") {
-        const characters = [...content], centis = Math.max(1, Math.round(((Number(scene.end) - Number(scene.start)) * 100) / Math.max(1, characters.length)));
-        text = `${placement}${characters.map((character) => `{\\k${centis}}${character}`).join("")}`;
-      }
-      if (settings.textEffect === "zoom-in") text = `{\\fscx35\\fscy35\\t(0,320,\\fscx100\\fscy100)}${text}`;
-      if (settings.textEffect === "bounce") text = `{\\fscx55\\fscy55\\t(0,180,\\fscx120\\fscy120)\\t(180,360,\\fscx100\\fscy100)}${text}`;
-      if (settings.textEffect === "glow") text = `{\\blur3\\bord5\\3c${accent}}${text}`;
-      if (settings.textEffect === "shake") text = `{\\frz-2\\t(0,100,\\frz2)\\t(100,200,\\frz-2)\\t(200,300,\\frz0)}${text}`;
+      const text = applyAssTextEffect(content, placement, scene, settings, accent);
       return `Dialogue: 0,${assTime(scene.start)},${assTime(scene.end)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
@@ -245,9 +227,9 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition) 
   if (transition === "flash") vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
   return `${vf},setsar=1,format=yuv420p`;
 }
-async function renderSinglePass({ dir, files, voice, media, scenes, settings, width, height, overlayImagePath }) {
+async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset = 0, outputName = "matchcut-output.mp4" }) {
   if (scenes.length > 120) throw new Error(`Timeline ${scenes.length} cảnh vượt ngưỡng single-pass an toàn 120 cảnh.`);
-  const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
+  const randomTransitions = settings.fastRender !== false ? ["none", "fade", "zoom-in", "zoom-out", "flash"] : ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
   const sourceMap = new Map(), resolvedScenes = [];
   for (let index = 0; index < scenes.length; index++) {
     const scene = scenes[index];
@@ -270,16 +252,18 @@ async function renderSinglePass({ dir, files, voice, media, scenes, settings, wi
       filters.push(`[${entry.inputIndex}:v]split=${entry.uses.length}${entry.labels.map((label) => `[${label}]`).join("")}`);
     } else entry.labels = [`${entry.inputIndex}:v`];
   }
+  const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
   const voiceIndex = inputIndex++;
-  inputArgs.push("-i", voice.path);
+  if (timeOffset > 0) inputArgs.push("-ss", timeOffset.toFixed(3));
+  inputArgs.push("-t", totalDuration.toFixed(3), "-i", voice.path);
   const music = files?.music?.[0];
   let musicIndex = null;
-  if (music) { musicIndex = inputIndex++; inputArgs.push("-stream_loop", "-1", "-i", music.path); }
+  if (music) { musicIndex = inputIndex++; inputArgs.push("-stream_loop", "-1"); if (timeOffset > 0) inputArgs.push("-ss", timeOffset.toFixed(3)); inputArgs.push("-t", totalDuration.toFixed(3), "-i", music.path); }
   let overlayIndex = null;
-  if (overlayImagePath) { overlayIndex = inputIndex++; inputArgs.push("-loop", "1", "-i", overlayImagePath); }
+  if (overlayImagePath) { overlayIndex = inputIndex++; inputArgs.push("-loop", "1", "-framerate", "1", "-i", overlayImagePath); }
   const watermark = files?.watermark?.[0];
   let watermarkIndex = null;
-  if (watermark) { watermarkIndex = inputIndex++; inputArgs.push("-loop", "1", "-i", watermark.path); }
+  if (watermark) { watermarkIndex = inputIndex++; inputArgs.push("-loop", "1", "-framerate", settings.watermarkRotate ? "30" : "1", "-i", watermark.path); }
 
   let previousTransition = "";
   const sourceBranches = new Map([...sourceMap.entries()].map(([key, entry]) => [key, 0]));
@@ -297,7 +281,6 @@ async function renderSinglePass({ dir, files, voice, media, scenes, settings, wi
   });
   filters.push(`${resolvedScenes.map((_, index) => `[scene${index}]`).join("")}concat=n=${resolvedScenes.length}:v=1:a=0[timeline]`);
 
-  const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
   const voiceCopies = settings.voiceWaveformEnabled ? 2 : 1;
   if (voiceCopies > 1) filters.push(`[${voiceIndex}:a]asplit=2[voiceMixSource][voiceWaveSource]`);
   const voiceSource = voiceCopies > 1 ? "voiceMixSource" : `${voiceIndex}:a`;
@@ -316,7 +299,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, settings, wi
   if (overlayIndex !== null) {
     const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
     filters.push(`[${overlayIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
-    filters.push(`[${current}][overlayimg]overlay=0:0:shortest=1[layer${++layer}]`); current = `layer${layer}`;
+    filters.push(`[${current}][overlayimg]overlay=0:0:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
   const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
@@ -325,7 +308,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, settings, wi
     const safeColor = String(color || "#ffffff").replace("#", "");
     const centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100;
     const x = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), y = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=30,format=rgba[${name}]`);
+    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba[${name}]`);
     filters.push(`[${current}][${name}]overlay=${x}:${y}:shortest=1[layer${++layer}]`); current = `layer${layer}`;
   };
   if (settings.waveformEnabled && musicIndex !== null) addWave("musicWaveSource", settings.waveformColor, settings.waveformX, settings.waveformY, "musicwave");
@@ -334,21 +317,42 @@ async function renderSinglePass({ dir, files, voice, media, scenes, settings, wi
     const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100, speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12));
     const rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "";
     filters.push(`[${watermarkIndex}:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm]`);
-    filters.push(`[${current}][wm]overlay=W-w-35:35:shortest=1[layer${++layer}]`); current = `layer${layer}`;
+    filters.push(`[${current}][wm]overlay=W-w-35:35:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   if (settings.subtitleEnabled !== false) {
     const assPath = path.join(dir, "captions.ass");
-    await writeFile(assPath, createAss(scenes, settings), "utf8");
+    await writeFile(assPath, createAss(captionScenes || scenes, settings), "utf8");
     const escaped = assPath.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
     const escapedFonts = fontsRoot.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
-    filters.push(`[${current}]subtitles=filename='${escaped}':fontsdir='${escapedFonts}'[vout]`);
-  } else filters.push(`[${current}]null[vout]`);
+    filters.push(`[${current}]subtitles=filename='${escaped}':fontsdir='${escapedFonts}',setsar=1[vout]`);
+  } else filters.push(`[${current}]setsar=1[vout]`);
 
   const graphPath = path.join(dir, "single-pass.ffgraph");
   await writeFile(graphPath, filters.join(";\n"), "utf8");
-  const output = path.join(dir, "matchcut-output.mp4");
-  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"], output);
+  const output = path.join(dir, outputName);
+  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false });
   return { output, encoder };
+}
+async function renderChunkedSinglePass(options) {
+  const { dir, scenes, captionScenes = scenes, onProgress } = options, chunkSize = 24, outputs = [], chunkCount = Math.ceil(scenes.length / chunkSize);
+  let encoder = "h264_nvenc";
+  for (let index = 0; index < scenes.length; index += chunkSize) {
+    const chunkNumber = outputs.length + 1;
+    await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}`, 60 + Math.floor(((chunkNumber - 1) / chunkCount) * 30));
+    const group = scenes.slice(index, index + chunkSize), offset = Number(group[0].start) || 0, end = Number(group.at(-1).end), duration = end - offset;
+    const localScenes = group.map((scene) => ({ ...scene, start: Number(scene.start) - offset, end: Number(scene.end) - offset }));
+    const localCaptions = captionScenes
+      .filter((scene) => Number(scene.end) > offset && Number(scene.start) < end)
+      .map((scene) => ({ ...scene, start: Math.max(0, Number(scene.start) - offset), end: Math.min(duration, Number(scene.end) - offset) }));
+    const result = await renderSinglePass({ ...options, scenes: localScenes, captionScenes: localCaptions, timeOffset: offset, outputName: `fast-chunk-${String(outputs.length).padStart(3, "0")}.mp4` });
+    outputs.push(result.output); encoder = result.encoder;
+  }
+  await onProgress?.("Ghép các khối MP4", 92);
+  const concatFile = path.join(dir, "fast-chunks.txt");
+  await writeFile(concatFile, outputs.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join("\n"), "utf8");
+  const output = path.join(dir, "matchcut-output.mp4");
+  await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", output]);
+  return { output, encoder, pipeline: `chunked-single-pass-${outputs.length}` };
 }
 app.post("/api/pick-folder", async (_req, res) => {
   try {
@@ -412,6 +416,7 @@ app.post(
       const voice = req.files?.voice?.[0],
         media = req.files?.media || [],
         scenes = JSON.parse(req.body.scenes || "[]"),
+        captionScenes = JSON.parse(req.body.captionScenes || req.body.scenes || "[]"),
         settings = JSON.parse(req.body.settings || "{}");
       if (!voice || !scenes.length || (!media.length && !scenes.some((scene) => scene.mediaPath)))
         return res
@@ -438,7 +443,13 @@ app.post(
       }
       if (settings.singlePassRender !== false) {
         try {
-          const singlePass = await renderSinglePass({ dir, files: req.files, voice, media, scenes, settings, width, height, overlayImagePath });
+          const progressJob = req.body.jobId ? persistentJobs.get(req.body.jobId) : null;
+          const onProgress = progressJob ? async (stage, progress) => {
+            progressJob.stage = stage; progressJob.progress = progress; progressJob.updatedAt = new Date().toISOString();
+            await savePersistentJob(progressJob);
+          } : null;
+          const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, onProgress };
+          const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
           const savedPath = await availableExportPath(voice.originalname);
           await copyFile(singlePass.output, savedPath);
           return sendRenderResult({
@@ -447,7 +458,7 @@ app.post(
             fileName: path.basename(savedPath),
             overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
             renderEncoder: singlePass.encoder,
-            renderPipeline: "single-pass",
+            renderPipeline: singlePass.pipeline || "single-pass",
             settings,
           });
         } catch (singlePassError) {
@@ -514,7 +525,7 @@ app.post(
             "-vf",
             vf,
             "-an",
-          ], out);
+          ], out, { fast: settings.fastRender !== false });
         else
           renderEncoder = await runVideoEncode([
             ...common,
@@ -527,7 +538,7 @@ app.post(
             "-vf",
             vf,
             "-an",
-          ], out);
+          ], out, { fast: settings.fastRender !== false });
         segments.push(out);
       }
       const concatFile = path.join(dir, "concat.txt");
@@ -573,14 +584,14 @@ app.post(
           audioSource,
         ];
       let nextVideoInput = 2, overlayInputIndex = null, watermarkInputIndex = null, voiceWaveformInputIndex = null, musicWaveformInputIndex = null;
-      if (overlayImagePath) { overlayInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", overlayImagePath); }
-      if (watermark) { watermarkInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-i", watermark.path); }
+      if (overlayImagePath) { overlayInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-framerate", "1", "-i", overlayImagePath); }
+      if (watermark) { watermarkInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-framerate", settings.watermarkRotate ? "30" : "1", "-i", watermark.path); }
       if (settings.voiceWaveformEnabled) { voiceWaveformInputIndex = nextVideoInput++; inputArgs.push("-i", voice.path); }
       if (settings.waveformEnabled && music) { musicWaveformInputIndex = nextVideoInput++; inputArgs.push("-stream_loop", "-1", "-i", music.path); }
       let subtitleFilter = "";
       if (settings.subtitleEnabled !== false) {
         const assPath = path.join(dir, "captions.ass");
-        await writeFile(assPath, createAss(scenes, settings), "utf8");
+        await writeFile(assPath, createAss(captionScenes, settings), "utf8");
         const escaped = assPath
           .replaceAll("\\", "/")
           .replace(":", "\\:")
@@ -595,14 +606,14 @@ app.post(
         if (overlayInputIndex !== null) {
           const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
           filters.push(`[${overlayInputIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
-          filters.push(`[${current}][overlayimg]overlay=0:0:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
+          filters.push(`[${current}][overlayimg]overlay=0:0:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
         const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
           waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
         const addWaveform = (inputIndex, color, xPercent, yPercent, name) => {
           if (inputIndex === null) return;
           const safeColor = String(color || "#ffffff").replace("#", ""), centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100, waveX = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), waveY = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=30,format=rgba[${name}]`);
+          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba[${name}]`);
           filters.push(`[${current}][${name}]overlay=${waveX}:${waveY}:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
         };
         addWaveform(musicWaveformInputIndex, settings.waveformColor, settings.waveformX, settings.waveformY, "musicwave");
@@ -612,17 +623,17 @@ app.post(
             speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12)),
             rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "";
           filters.push(`[${watermarkInputIndex}:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm]`);
-          filters.push(`[${current}][wm]overlay=W-w-35:35:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
+          filters.push(`[${current}][wm]overlay=W-w-35:35:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
-        if (subtitleFilter) filters.push(`[${current}]${subtitleFilter}[vout]`);
-        else filters.push(`[${current}]null[vout]`);
+        if (subtitleFilter) filters.push(`[${current}]${subtitleFilter},setsar=1[vout]`);
+        else filters.push(`[${current}]setsar=1[vout]`);
         encodeArgs.push("-filter_complex", filters.join(";"), "-map", "[vout]", "-map", "1:a:0");
       } else {
         if (subtitleFilter) encodeArgs.push("-vf", subtitleFilter);
         encodeArgs.push("-map", "0:v:0", "-map", "1:a:0");
       }
       encodeArgs.push("-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart");
-      if (subtitleFilter || hasVisualLayers) renderEncoder = await runVideoEncode(encodeArgs, output);
+      if (subtitleFilter || hasVisualLayers) renderEncoder = await runVideoEncode(encodeArgs, output, { fast: settings.fastRender !== false });
       else {
         await run([...encodeArgs, "-c:v", "copy", output]);
         renderEncoder = "copy";
@@ -711,7 +722,7 @@ app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
   }
 });
 
-const persistentJobs = new Map();
+const persistentJobs = new Map(), persistentSaveQueues = new Map();
 let persistentWorkerRunning = false;
 const jobPublic = (job) => ({
   id: job.id, name: job.name, profileName: job.profileName, status: job.status,
@@ -727,10 +738,19 @@ function addJobLog(job, message) {
   job.updatedAt = new Date().toISOString();
 }
 async function savePersistentJob(job) {
-  const file = path.join(persistentRoot, job.id, "job.json"), temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(job, null, 2), "utf8");
-  try { await rename(temporary, file); }
-  catch { await rm(file, { force: true }); await rename(temporary, file); }
+  const snapshot = JSON.stringify(job, null, 2), previous = persistentSaveQueues.get(job.id) || Promise.resolve();
+  const operation = previous.catch(() => undefined).then(async () => {
+    const file = path.join(persistentRoot, job.id, "job.json"), temporary = `${file}.${crypto.randomUUID()}.tmp`;
+    await mkdir(path.dirname(file), { recursive: true });
+    try {
+      await writeFile(temporary, snapshot, "utf8");
+      try { await rename(temporary, file); }
+      catch { await rm(file, { force: true }); await rename(temporary, file); }
+    } finally { await rm(temporary, { force: true }); }
+  });
+  persistentSaveQueues.set(job.id, operation);
+  operation.finally(() => { if (persistentSaveQueues.get(job.id) === operation) persistentSaveQueues.delete(job.id); }).catch(() => undefined);
+  return operation;
 }
 async function loadPersistentJobs() {
   for (const entry of await readdir(persistentRoot, { withFileTypes: true })) {
@@ -741,6 +761,9 @@ async function loadPersistentJobs() {
         job.status = "queued";
         addJobLog(job, `Backend khởi động lại — tự tiếp tục từ công đoạn ${job.transcript ? "render" : "timestamp"}.`);
         await savePersistentJob(job);
+      }
+      for (const asset of job.assets || []) {
+        if (asset?.localPath) allowedLocalMedia.add(path.resolve(asset.localPath));
       }
       persistentJobs.set(job.id, job);
     } catch (error) { console.warn(`Không đọc được job ${entry.name}: ${error}`); }
@@ -776,16 +799,28 @@ async function localPost(endpoint, form) {
 async function processPersistentJob(job) {
   try {
     job.error = null;
+    if (!job.transcript?.chunks?.length && job.files.subtitle?.path) {
+      job.status = "transcribing"; job.stage = "Đọc phụ đề SRT"; job.progress = 20;
+      addJobLog(job, `Đang đọc SRT cùng tên: ${job.files.subtitle.originalName}`); await savePersistentJob(job);
+      try {
+        const chunks = parseSrt(await readFile(job.files.subtitle.path, "utf8"));
+        job.transcript = { chunks, language: job.settings.language || "auto", source: "srt" };
+        job.progress = 55; addJobLog(job, `Đã dùng trực tiếp ${chunks.length} timestamp từ SRT; bỏ qua Whisper.`); await savePersistentJob(job);
+      } catch (error) {
+        addJobLog(job, `SRT không hợp lệ (${error instanceof Error ? error.message : error}); tự chuyển sang Faster-Whisper.`);
+        job.transcript = null; await savePersistentJob(job);
+      }
+    }
     if (!job.transcript?.chunks?.length) {
       job.status = "transcribing"; job.stage = "Tạo timestamp"; job.progress = 10;
       addJobLog(job, "Bắt đầu tạo timestamp bằng Faster-Whisper."); await savePersistentJob(job);
       const form = new FormData();
       await appendJobFile(form, "voice", job.files.voice); form.append("language", job.settings.language || "auto");
-      job.transcript = await localPost("/api/transcribe", form);
+      job.transcript = await localPost("/api/transcribe", form); job.transcript.source = "whisper";
       job.progress = 55; addJobLog(job, `Đã lưu ${job.transcript.chunks.length} timestamp; checkpoint này sẽ được dùng lại.`); await savePersistentJob(job);
     } else addJobLog(job, `Dùng lại checkpoint ${job.transcript.chunks.length} timestamp đã lưu.`);
 
-    job.status = "rendering"; job.stage = "Render MP4"; job.progress = 60; await savePersistentJob(job);
+    job.status = "rendering"; job.stage = "Render MP4"; job.progress = 60; job.settings.fastRender = job.settings.fastRender !== false; await savePersistentJob(job);
     const picked = chooseJobAssets(job.assets, job.transcript.chunks.length, job.selectionMode);
     const renderForm = new FormData(); await appendJobFile(renderForm, "voice", job.files.voice);
     const uploadedAssets = job.assets.filter((asset) => asset.uploadedPath).sort((a, b) => a.uploadIndex - b.uploadIndex);
@@ -796,7 +831,7 @@ async function processPersistentJob(job) {
     // file, otherwise `-shortest` truncates the exported video.
     const probedVoiceDuration = await probeMediaDuration(job.files.voice.path);
     const voiceDuration = Math.max(Number(job.transcript.audioDuration) || 0, probedVoiceDuration);
-    const scenes = job.transcript.chunks.map((chunk, index) => {
+    const captionScenes = job.transcript.chunks.map((chunk, index) => {
       const asset = job.assets[picked[index]];
       // Render scenes must be contiguous. Summing only spoken chunk lengths
       // removes every pause between phrases and shortens long videos.
@@ -805,13 +840,13 @@ async function processPersistentJob(job) {
       const end = Number.isFinite(nextStart) ? nextStart : voiceDuration;
       return { start, end: Math.max(start + 0.05, end), text: chunk.text, mediaIndex: asset.uploadedPath ? asset.uploadIndex : null, mediaPath: asset.localPath || null, mediaType: asset.type };
     });
-    renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1");
-    addJobLog(job, `Render ${scenes.length} cảnh bằng single-pass NVENC.`); await savePersistentJob(job);
+    const scenes = job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
+    renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("captionScenes", JSON.stringify(captionScenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1"); renderForm.append("jobId", job.id);
+    addJobLog(job, `Render nhanh ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng single-pass NVENC.`); await savePersistentJob(job);
     const renderHeartbeat = setInterval(() => {
       if (job.status !== "rendering") return;
-      job.progress = Math.min(94, Math.max(61, Number(job.progress || 60) + 1));
       job.updatedAt = new Date().toISOString();
-      void savePersistentJob(job);
+      void savePersistentJob(job).catch((error) => console.error(`Không lưu được heartbeat job ${job.id}:`, error));
     }, 10000);
     try { job.output = await localPost("/api/render", renderForm); }
     finally { clearInterval(renderHeartbeat); }
@@ -833,7 +868,7 @@ async function pumpPersistentJobs() {
     }
   } finally { persistentWorkerRunning = false; }
 }
-const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "media", maxCount: 100 }, { name: "intro", maxCount: 1 }, { name: "outro", maxCount: 1 }, { name: "overlay", maxCount: 1 }, { name: "watermark", maxCount: 1 }, { name: "music", maxCount: 1 }]);
+const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "subtitle", maxCount: 1 }, { name: "media", maxCount: 100 }, { name: "intro", maxCount: 1 }, { name: "outro", maxCount: 1 }, { name: "overlay", maxCount: 1 }, { name: "watermark", maxCount: 1 }, { name: "music", maxCount: 1 }]);
 app.post("/api/jobs", jobUpload, async (req, res) => {
   const voice = req.files?.voice?.[0];
   if (!voice) return res.status(400).json({ error: "Chưa có file voice." });
@@ -845,7 +880,7 @@ app.post("/api/jobs", jobUpload, async (req, res) => {
       const destination = path.join(inputs, `${field}-${crypto.randomUUID()}${path.extname(file.originalname)}`);
       await rename(file.path, destination); return { path: destination, originalName: file.originalname, size: file.size };
     };
-    const files = { voice: await moveRecord(voice, "voice") };
+    const files = { voice: await moveRecord(voice, "voice"), subtitle: await moveRecord(req.files?.subtitle?.[0], "subtitle") };
     for (const field of ["intro", "outro", "overlay", "watermark", "music"]) files[field] = await moveRecord(req.files?.[field]?.[0], field);
     const assetSpecs = JSON.parse(req.body.assets || "[]"), uploaded = req.files?.media || [];
     const assets = [];

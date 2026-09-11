@@ -86,6 +86,7 @@ function effectSettings() {
     mediaSelectionMode: $("#mediaSelectionMode").value,
     folderPaths: $("#folderPaths").value,
     autoRenderOnMatch: $("#autoRenderOnMatch").checked,
+    fastRender: $("#fastRender").checked,
   };
 }
 function applyCaptionStyle() {
@@ -177,7 +178,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformColor","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
@@ -248,12 +249,19 @@ function setActiveVoice(f) {
 }
 voice.onchange = () => {
   const incoming = [...voice.files];
-  for (const file of incoming) {
+  const subtitles = incoming.filter((file) => /\.srt$/i.test(file.name));
+  const audioFiles = incoming.filter((file) => !/\.srt$/i.test(file.name));
+  const baseName = (name) => name.replace(/\.[^.]+$/, "").trim().toLocaleLowerCase();
+  for (const file of audioFiles) {
     if (!batchFiles.some((item) => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) batchFiles.push({ file, selected: true, status: "Chờ chạy" });
   }
-  setActiveVoice(incoming[0]);
+  for (const item of batchFiles) {
+    const matched = subtitles.find((file) => baseName(file.name) === baseName(item.file?.name || item.fileName || ""));
+    if (matched) item.subtitleFile = matched;
+  }
+  setActiveVoice(audioFiles[0]);
   renderBatchList();
-  if (incoming.length) batchLog(`Đã thêm ${incoming.length} voice từ bước 01.`);
+  if (audioFiles.length || subtitles.length) batchLog(`Đã thêm ${audioFiles.length} voice và ghép được ${batchFiles.filter((item) => item.subtitleFile).length} SRT cùng tên.`);
 };
 script.oninput = () => {
   ready();
@@ -631,7 +639,7 @@ const batchLog = (message) => { const box = $("#batchLog"); box.textContent += `
 const safeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}%</span>${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Thêm voice ở bước 01 phía trên để tạo hàng đợi.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.subtitleFile ? "SRT sẵn" : "Whisper dự phòng"}</span>${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Thêm voice và SRT cùng tên ở bước 01.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons();
@@ -644,7 +652,7 @@ $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu
 async function processBatchItem(item) {
   if (!item.jobId) {
     item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; renderBatchList();
-    const form = new FormData(); form.append("voice", item.file);
+    const form = new FormData(); form.append("voice", item.file); if (item.subtitleFile) form.append("subtitle", item.subtitleFile);
     let uploadIndex = 0;
     const assetSpecs = assets.map((asset) => { if (asset.file) { const index = uploadIndex++; form.append("media", asset.file); return { name:asset.name, type:asset.type, uploadIndex:index }; } return { name:asset.name, type:asset.type, localPath:asset.localPath, uploadIndex:null }; });
     for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) form.append(field,file); }
