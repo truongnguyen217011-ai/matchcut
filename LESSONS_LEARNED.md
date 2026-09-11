@@ -4,11 +4,12 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 ## Quy trình bắt buộc
 
-1. Đọc `LESSONS_LEARNED.md` trước khi thay đổi MatchCut.
-2. Không chỉ thêm điều khiển trên giao diện; phải nối đến backend/FFmpeg và kiểm thử đầu-cuối.
-3. Không bàn giao tính năng render nếu chưa tạo được ít nhất một MP4 hợp lệ và kiểm tra khả năng giải mã.
-4. Sau khi gặp lỗi, ghi rõ triệu chứng, nguyên nhân, cách sửa và kiểm thử chống tái diễn.
-5. Không khởi động lại backend khi người dùng đang chạy Whisper hoặc FFmpeg. Trước khi restart phải kiểm tra tiến trình đang hoạt động.
+1. Trước mọi yêu cầu triển khai hoặc thay đổi, phải phỏng vấn người dùng bằng câu hỏi mở để thống nhất mục tiêu, ưu tiên, giới hạn, đầu ra mong muốn và góc nhìn chung; áp dụng cả khi mở cửa sổ mới. Chỉ bắt đầu thực hiện sau khi hai bên đã hiểu giống nhau.
+2. Đọc `LESSONS_LEARNED.md` trước khi thay đổi MatchCut.
+3. Không chỉ thêm điều khiển trên giao diện; phải nối đến backend/FFmpeg và kiểm thử đầu-cuối.
+4. Không bàn giao tính năng render nếu chưa tạo được ít nhất một MP4 hợp lệ và kiểm tra khả năng giải mã.
+5. Sau khi gặp lỗi, ghi rõ triệu chứng, nguyên nhân, cách sửa và kiểm thử chống tái diễn.
+6. Không khởi động lại backend khi người dùng đang chạy Whisper hoặc FFmpeg. Trước khi restart phải kiểm tra tiến trình đang hoạt động.
 
 ## Các bài học đã xác nhận
 
