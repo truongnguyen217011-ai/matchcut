@@ -231,5 +231,7 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Đồng thời đặt `-t <thời lượng khối>` ở output làm giới hạn cứng; waveform/overlay hoặc nguồn loop có thể khiến `-shortest` không nhận được EOF như mong đợi.
 - Với đầu ra 30 fps, thêm giới hạn frame `ceil(duration × 30)`; mốc `-t` có thể chờ frame tiếp theo khi frame cuối nằm ngay trước thời lượng đích.
 - Không dùng `-stream_loop -1` cho footage video qua filter graph phức tạp. Probe thời lượng nguồn và đặt số vòng hữu hạn `ceil(thời lượng khối / thời lượng nguồn) - 1` để vẫn lặp đủ hình nhưng bảo đảm input phát EOF.
+- Không lặp từng nguồn theo toàn bộ thời lượng khối. Mỗi nguồn chỉ cần lặp tới cảnh dài nhất sử dụng nguồn đó; scale một lần ở nhánh gốc rồi mới `split`, tránh giải mã và resize dư hàng chục lần.
+- Probe metadata từ ổ mạng phải chạy song song có giới hạn và cache Promise theo đường dẫn cho toàn bộ phiên backend; không probe tuần tự lại cùng footage ở từng khối.
 - Dùng bài test 3 giây để chặn hồi quy: tiến trình phải tự thoát, encoder phải tạo trailer MP4 và toàn bộ file phải giải mã được.
 - Với waveform, nguồn `color`/`gradients` là vô hạn. `alphamerge` bắt buộc dùng `shortest=1`; nếu không nó giữ frame mask cuối và khiến render không bao giờ nhận EOF.

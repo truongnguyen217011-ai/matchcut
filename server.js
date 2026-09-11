@@ -119,6 +119,22 @@ function probeMediaDuration(file) {
     });
   });
 }
+const mediaDurationCache = new Map();
+async function cachedMediaDuration(file) {
+  const key = path.resolve(file);
+  if (!mediaDurationCache.has(key)) mediaDurationCache.set(key, probeMediaDuration(key).catch((error) => { mediaDurationCache.delete(key); throw error; }));
+  return mediaDurationCache.get(key);
+}
+async function hydrateSourceDurations(entries, concurrency = 6) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, entries.length) }, async () => {
+    while (cursor < entries.length) {
+      const entry = entries[cursor++];
+      entry.sourceDuration = await cachedMediaDuration(entry.source);
+    }
+  });
+  await Promise.all(workers);
+}
 function probeHasAudio(file) {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], { windowsHide: true });
@@ -277,11 +293,11 @@ async function findOverlayImages(folder) {
   }
   return results;
 }
-function sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode = false) {
+function sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode = false, preScaled = false) {
   const scaler = gpuMode && scene.mediaType !== "image"
     ? `scale_cuda=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2:interp_algo=lanczos,hwdownload,format=nv12,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
     : `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
-  let vf = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scaler},setsar=1,fps=30`;
+  let vf = preScaled ? `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS` : `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scaler},setsar=1,fps=30`;
   const darkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
   if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
   if (transition === "fade") vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
@@ -318,20 +334,27 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
 
   const inputArgs = ["-y", "-hide_banner", "-loglevel", "error"], filters = [];
   const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
+  await hydrateSourceDurations([...sourceMap.values()].filter((entry) => entry.type !== "image"));
   let inputIndex = 0;
   for (const entry of sourceMap.values()) {
     entry.inputIndex = inputIndex++;
+    entry.requiredDuration = Math.max(...entry.uses.map((sceneIndex) => Math.max(0.5, Number(resolvedScenes[sceneIndex].end) - Number(resolvedScenes[sceneIndex].start))));
     if (gpuMode && entry.type !== "image") inputArgs.push("-hwaccel", "cuda", "-hwaccel_output_format", "cuda");
-    if (entry.type === "image") inputArgs.push("-loop", "1", "-t", totalDuration.toFixed(3), "-i", entry.source);
+    if (entry.type === "image") inputArgs.push("-loop", "1", "-t", entry.requiredDuration.toFixed(3), "-i", entry.source);
     else {
-      const sourceDuration = Math.max(0.05, await probeMediaDuration(entry.source));
-      const loopCount = Math.max(0, Math.ceil(totalDuration / sourceDuration) - 1);
+      const sourceDuration = Math.max(0.05, entry.sourceDuration);
+      const loopCount = Math.max(0, Math.ceil(entry.requiredDuration / sourceDuration) - 1);
       inputArgs.push("-stream_loop", String(loopCount), "-i", entry.source);
     }
+    const baseLabel = `base${entry.inputIndex}`;
+    const baseScale = gpuMode && entry.type !== "image"
+      ? `scale_cuda=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2:interp_algo=lanczos,hwdownload,format=nv12,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+      : `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
+    filters.push(`[${entry.inputIndex}:v]${baseScale},setsar=1,fps=30,setpts=N/(30*TB),format=yuv420p[${baseLabel}]`);
     if (entry.uses.length > 1) {
       entry.labels = entry.uses.map((_, branch) => `src${entry.inputIndex}_${branch}`);
-      filters.push(`[${entry.inputIndex}:v]split=${entry.uses.length}${entry.labels.map((label) => `[${label}]`).join("")}`);
-    } else entry.labels = [`${entry.inputIndex}:v`];
+      filters.push(`[${baseLabel}]split=${entry.uses.length}${entry.labels.map((label) => `[${label}]`).join("")}`);
+    } else entry.labels = [baseLabel];
   }
   const voiceIndex = inputIndex++;
   if (timeOffset > 0) inputArgs.push("-ss", timeOffset.toFixed(3));
@@ -357,7 +380,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     }
     previousTransition = transition;
     const duration = Math.max(0.5, Number(scene.end) - Number(scene.start));
-    filters.push(`[${entry.labels[branch]}]${sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode)}[scene${index}]`);
+    filters.push(`[${entry.labels[branch]}]${sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode, true)}[scene${index}]`);
   });
   filters.push(`${resolvedScenes.map((_, index) => `[scene${index}]`).join("")}concat=n=${resolvedScenes.length}:v=1:a=0[timeline]`);
 
