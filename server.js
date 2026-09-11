@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
+import { buildSubtitleCues } from "./subtitle-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   fontsRoot = path.join(root, "dist", "fonts"),
@@ -127,7 +128,8 @@ function createAss(scenes, settings) {
     italic = settings.fontItalic ? -1 : 0,
     spacing = Math.max(0, Number(settings.letterSpacing) || 0),
     outlineSize = Math.max(0, Number(settings.outlineSize) || 2);
-  const events = scenes
+  const subtitleCues = buildSubtitleCues(scenes, settings);
+  const events = subtitleCues
     .map((scene) => {
       const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
       let text = `${placement}${content}`;

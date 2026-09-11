@@ -45,3 +45,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Các đường dẫn kho tư liệu, font, phụ đề, lớp phủ, watermark, sóng âm, hiệu ứng và chế độ render phải được lưu/nạp theo đúng cấu hình kênh.
 - Khi thay đổi schema cấu hình phải có bước chuyển đổi dữ liệu cũ.
 
+### 6. Điều khiển chia phụ đề phải được áp dụng ở backend
+
+- Triệu chứng: thay “Số từ/cụm” hoặc “Số dòng tối đa” trên giao diện nhưng video xuất ra không thay đổi; câu dài có thể tràn khung.
+- Nguyên nhân: hai giá trị đã được gửi trong `settings` nhưng `createAss` từng ghi nguyên văn mỗi scene thành một dòng ASS.
+- Cách phòng tránh: luôn tách scene thành cue theo `wordsPerCaption`, cân dòng theo `maxLines`, rồi phân bổ lại timestamp liên tục trong khoảng thời gian scene gốc; hỗ trợ cả ngôn ngữ không dùng khoảng trắng bằng `Intl.Segmenter`.
+- Kiểm thử: unit test câu Latin, giới hạn một dòng, tiếng Nhật, timestamp lỗi; sau đó render MP4 thật, giải mã toàn bộ và kiểm tra hình tại cue đầu/cuối.
