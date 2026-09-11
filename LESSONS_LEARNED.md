@@ -171,3 +171,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Nguyên nhân: giao diện chỉ xóa mảng trong trình duyệt, còn `data/runtime-jobs` và bộ nhớ backend vẫn giữ job.
 - Cách phòng tránh: nút xóa phải gọi API xóa job, file voice/SRT và checkpoint timestamp trên backend; đồng thời xóa voice đang chọn và giá trị file input trên giao diện.
 - Không xóa MP4 đã xuất trong `C:\MatchCut\Exports`. Phải từ chối xóa nếu có job đang nhận dạng hoặc render để tránh phá hỏng tiến trình.
+
+### 24. Preview sóng âm phải tương ứng với FFmpeg thật
+
+- Sóng cỡ lớn cần điều chỉnh độc lập chiều rộng, chiều cao, vị trí, độ đậm và độ dày; cấu hình phải lưu theo kênh.
+- Kiểu cầu vồng phải được tạo trong filter graph bằng waveform mask và gradient thật, không chỉ tô CSS ở preview.
+- Dùng `showwaves` chế độ `p2p`, thang `sqrt` và `draw=full` để biên độ rõ hơn; dùng dilation có giới hạn để tăng độ dày mà không làm nặng render quá mức.

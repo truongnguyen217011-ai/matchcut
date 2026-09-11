@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./ffmpeg.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.1</span></div></div><div class="status"><i></i>Persistent Queue Clear + Caption Gallery + NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.2</span></div></div><div class="status"><i></i>Rainbow Waveform + Persistent Queue + NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -82,12 +82,12 @@
         <fieldset><legend>Âm thanh & sóng nhạc</legend><div class="file-grid">
           <label>Âm lượng voice<input id="voiceVolume" type="range" min="0" max="200" value="100"></label><label>Trễ voice (giây)<input id="voiceDelay" type="number" min="0" step="0.1" value="0"></label>
           <label>Nhạc nền<input id="musicInput" type="file" accept="audio/*"></label><label>Âm lượng nhạc<input id="musicVolume" type="range" min="0" max="100" value="6"></label>
-          <label class="check"><input id="waveformEnabled" type="checkbox"> Hiện sóng nhạc nền</label><label>Màu sóng nhạc<input id="waveformColor" type="color" value="#FFD700"></label>
+          <label class="check"><input id="waveformEnabled" type="checkbox"> Hiện sóng nhạc nền</label><label>Kiểu sóng<select id="waveformStyle"><option value="rainbow">Cầu vồng rõ</option><option value="solid">Một màu</option></select></label><label>Màu sóng một màu<input id="waveformColor" type="color" value="#FFD700"></label>
           <label>Độ đậm sóng nhạc <output id="waveformOpacityValue">100%</output><input id="waveformOpacity" type="range" min="0" max="100" value="100"></label>
           <label>Vị trí ngang sóng nhạc <output id="waveformXValue">50%</output><input id="waveformX" type="range" min="5" max="95" value="50"></label><label>Vị trí dọc sóng nhạc <output id="waveformYValue">82%</output><input id="waveformY" type="range" min="5" max="95" value="82"></label><label class="check"><input id="voiceWaveformEnabled" type="checkbox"> Hiện sóng theo giọng đọc</label>
           <label>Màu sóng giọng đọc<input id="voiceWaveformColor" type="color" value="#2AF0A8"></label><label>Độ đậm sóng voice <output id="voiceWaveformOpacityValue">100%</output><input id="voiceWaveformOpacity" type="range" min="0" max="100" value="100"></label><label>Vị trí dọc sóng voice <output id="voiceWaveformYValue">72%</output><input id="voiceWaveformY" type="range" min="5" max="95" value="72"></label>
-          <label>Vị trí ngang sóng voice <output id="voiceWaveformXValue">50%</output><input id="voiceWaveformX" type="range" min="5" max="95" value="50"></label><label>Chiều rộng <output id="waveformWidthValue">70%</output><input id="waveformWidth" type="range" min="20" max="100" value="70"></label>
-          <label>Chiều cao <output id="waveformHeightValue">120px</output><input id="waveformHeight" type="range" min="40" max="300" step="10" value="120"></label><div id="waveformPreview" class="waveform-preview wide"><i id="musicWavePreview" data-wave="music" title="Kéo để đặt sóng nhạc"></i><i id="voiceWavePreview" data-wave="voice" title="Kéo để đặt sóng voice"></i><span>Kéo trực tiếp từng sóng để đặt vị trí</span></div>
+          <label>Vị trí ngang sóng voice <output id="voiceWaveformXValue">50%</output><input id="voiceWaveformX" type="range" min="5" max="95" value="50"></label><label>Chiều rộng <output id="waveformWidthValue">65%</output><input id="waveformWidth" type="range" min="20" max="100" value="65"></label>
+          <label>Chiều cao <output id="waveformHeightValue">170px</output><input id="waveformHeight" type="range" min="40" max="360" step="10" value="170"></label><label>Độ dày nét <output id="waveformThicknessValue">4px</output><input id="waveformThickness" type="range" min="1" max="8" value="4"></label><div id="waveformPreview" class="waveform-preview wide"><i id="musicWavePreview" data-wave="music" title="Kéo để đặt sóng nhạc"></i><i id="voiceWavePreview" data-wave="voice" title="Kéo để đặt sóng voice"></i><span>Kéo trực tiếp từng sóng để đặt vị trí</span></div>
         </div></fieldset>
         <fieldset><legend>Tiêu đề xuyên suốt</legend><div class="effect-grid">
           <label class="check wide"><input id="persistentTitle" type="checkbox"> Bật tiêu đề xuyên suốt</label>

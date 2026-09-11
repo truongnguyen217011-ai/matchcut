@@ -23,6 +23,7 @@ import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
 import { compactVisualScenes } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
+import { buildWaveformSourceFilters } from "./waveform-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -306,7 +307,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     const opacity = Math.min(100, Math.max(0, Number(opacityPercent ?? 100))) / 100;
     const centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100;
     const x = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), y = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[${name}]`);
+    filters.push(...buildWaveformSourceFilters({ source, name, width: waveWidth, height: waveHeight, rate: settings.fastRender !== false ? 15 : 30, color: safeColor, opacity, style: settings.waveformStyle || "solid", thickness: settings.waveformThickness || 2 }));
     filters.push(`[${current}][${name}]overlay=${x}:${y}:shortest=1[layer${++layer}]`); current = `layer${layer}`;
   };
   if (settings.waveformEnabled && musicIndex !== null) addWave("musicWaveSource", settings.waveformColor, settings.waveformOpacity, settings.waveformX, settings.waveformY, "musicwave");
@@ -611,7 +612,7 @@ app.post(
         const addWaveform = (inputIndex, color, opacityPercent, xPercent, yPercent, name) => {
           if (inputIndex === null) return;
           const safeColor = String(color || "#ffffff").replace("#", ""), opacity = Math.min(100, Math.max(0, Number(opacityPercent ?? 100))) / 100, centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100, waveX = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), waveY = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
-          filters.push(`[${inputIndex}:a]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=${settings.fastRender !== false ? 15 : 30},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[${name}]`);
+          filters.push(...buildWaveformSourceFilters({ source: `${inputIndex}:a`, name, width: waveWidth, height: waveHeight, rate: settings.fastRender !== false ? 15 : 30, color: safeColor, opacity, style: settings.waveformStyle || "solid", thickness: settings.waveformThickness || 2 }));
           filters.push(`[${current}][${name}]overlay=${waveX}:${waveY}:shortest=1[v${++layerNumber}]`); current = `v${layerNumber}`;
         };
         addWaveform(musicWaveformInputIndex, settings.waveformColor, settings.waveformOpacity, settings.waveformX, settings.waveformY, "musicwave");
