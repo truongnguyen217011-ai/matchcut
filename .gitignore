@@ -5,7 +5,9 @@ node_modules/
 __pycache__/
 *.pyc
 data/runtime-jobs/
+data/profile-assets/
 data/project-state.json
+qa-profile-assets/
 jobs/
 test-exports/
 test-exports-advanced/

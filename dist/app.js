@@ -202,6 +202,7 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
+const PROFILE_ASSET_INPUTS = { intro:"#introInput", outro:"#outroInput", overlay:"#overlayInput", watermark:"#watermarkInput", music:"#musicInput" };
 const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
@@ -210,7 +211,15 @@ let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys
 let profileSyncReady = false;
 function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); if (profileSyncReady) void fetch("/api/project-state", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ profiles, activeProfile }) }); }
 function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
-function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } $("#folderPaths").value = profile.folderPaths || ""; persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; setTimeout(() => void loadProfileMediaLibrary(id, profile.folderPaths || ""), 0); }
+function renderProfileAssetState(profile = profiles[activeProfile] || {}) {
+  for (const [field, selector] of Object.entries(PROFILE_ASSET_INPUTS)) {
+    const input = $(selector); input.value = "";
+    let note = input.parentElement.querySelector(".saved-profile-asset");
+    if (!note) { note = document.createElement("small"); note.className = "saved-profile-asset"; input.insertAdjacentElement("afterend", note); }
+    note.textContent = profile.profileAssets?.[field]?.originalName ? `Đã lưu trên máy: ${profile.profileAssets[field].originalName}` : "Chưa lưu tệp cho kênh này";
+  }
+}
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } $("#folderPaths").value = profile.folderPaths || ""; renderProfileAssetState(profile); persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; setTimeout(() => void loadProfileMediaLibrary(id, profile.folderPaths || ""), 0); }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
 $("#renameProfile").onclick = () => {
@@ -222,9 +231,22 @@ $("#renameProfile").onclick = () => {
   persistProfiles(); renderProfileSelect();
   $("#profileStatus").textContent = `Đã đổi tên “${current}” thành “${next}”.`;
 };
-$("#saveProfile").onclick = () => { const name = $("#profileName").value.trim() || "Kênh chưa đặt tên"; profiles[activeProfile] = { ...snapshotProfile(), profileName: name }; persistProfiles(); renderProfileSelect(); $("#profileStatus").textContent = `Đã lưu cấu hình “${name}” trên máy.`; };
+$("#saveProfile").onclick = async () => {
+  const button = $("#saveProfile"), name = $("#profileName").value.trim() || "Kênh chưa đặt tên";
+  button.disabled = true; $("#profileStatus").textContent = `Đang lưu toàn bộ cấu hình và tệp của “${name}”…`;
+  try {
+    const form = new FormData();
+    for (const [field, selector] of Object.entries(PROFILE_ASSET_INPUTS)) { const file = $(selector).files[0]; if (file) form.append(field, file); }
+    const response = await fetch(`/api/profile-assets/${encodeURIComponent(activeProfile)}`, { method:"POST", body:form }), result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không lưu được tệp của kênh.");
+    profiles[activeProfile] = { ...profiles[activeProfile], ...snapshotProfile(), profileName:name, profileAssets:result.assets || profiles[activeProfile]?.profileAssets || {} };
+    persistProfiles(); renderProfileSelect(); renderProfileAssetState(profiles[activeProfile]);
+    $("#profileStatus").textContent = `Đã lưu cấu hình và các tệp của “${name}” trên máy.`;
+  } catch (error) { $("#profileStatus").textContent = `Lỗi lưu kênh: ${error.message}`; }
+  finally { button.disabled = false; }
+};
 $("#newProfile").onclick = () => { activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...snapshotProfile(), profileName: `Kênh ${Object.keys(profiles).length + 1}` }; loadProfile(activeProfile); $("#profileName").focus(); $("#profileName").select(); };
-$("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
+$("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileAssets:{}, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
 $("#deleteProfile").onclick = () => { if (Object.keys(profiles).length === 1) { $("#profileStatus").textContent = "Phải giữ lại ít nhất một cấu hình kênh."; return; } const oldName = profiles[activeProfile]?.profileName; delete profiles[activeProfile]; activeProfile = Object.keys(profiles)[0]; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); $("#profileStatus").textContent = `Đã xóa “${oldName}”.`; };
 renderProfileSelect();
 loadProfile(activeProfile);
@@ -675,6 +697,7 @@ async function renderVideo() {
     ),
   );
   form.append("settings", JSON.stringify(effectSettings()));
+  form.append("profileId", activeProfile);
   try {
     const response = await fetch("/api/render", { method: "POST", body: form }),
       data = await response.json();
@@ -710,7 +733,8 @@ function renderBatchList() {
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons();
 }
-function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some((item) => item.jobId || (item.file && assets.length)); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || !canRun; $("#runBatch").disabled = batchRunning || !canRun; $("#stopBatch").disabled = !batchRunning; }
+function isRunnableBatchItem(item) { return Boolean(item && item.serverStatus !== "completed" && item.status !== "Hoàn tất" && (item.jobId || (item.file && assets.length))); }
+function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some(isRunnableBatchItem); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || !canRun; $("#runBatch").disabled = batchRunning || !canRun; $("#stopBatch").disabled = !batchRunning; }
 $("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
 $("#clearBatch").onclick = async () => {
@@ -736,7 +760,7 @@ async function processBatchItem(item) {
     let uploadIndex = 0;
     const assetSpecs = assets.map((asset) => { if (asset.file) { const index = uploadIndex++; form.append("media", asset.file); return { name:asset.name, type:asset.type, uploadIndex:index }; } return { name:asset.name, type:asset.type, localPath:asset.localPath, uploadIndex:null }; });
     for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) form.append(field,file); }
-    form.append("assets", JSON.stringify(assetSpecs)); form.append("settings", JSON.stringify(effectSettings())); form.append("selectionMode", $("#mediaSelectionMode").value);
+    form.append("assets", JSON.stringify(assetSpecs)); form.append("settings", JSON.stringify(effectSettings())); form.append("selectionMode", $("#mediaSelectionMode").value); form.append("profileId", activeProfile);
     const response = await fetchWithRetry("/api/jobs", { method:"POST", body:form }, `lưu job ${item.file.name}`), job = await response.json();
     if (!response.ok) throw new Error(job.error || "Không lưu được job"); item.jobId = job.id; item.fileName = job.name; item.logCount = 0; batchLog(`Đã lưu job ${job.id}. Backend sẽ tự tiếp tục nếu khởi động lại.`);
   } else if (item.serverStatus === "failed") {
@@ -753,8 +777,23 @@ async function processBatchItem(item) {
     await wait(2000);
   }
 }
-async function runBatch(items) { if (batchRunning) return; batchRunning = true; batchStopRequested = false; updateBatchButtons(); for (const item of items) { if (batchStopRequested) break; try { await processBatchItem(item); } catch (error) { item.status = "Lỗi"; item.error = error.message; renderBatchList(); batchLog(`✕ ${item.file?.name || item.fileName}: ${error.message}`); } } batchRunning = false; updateBatchButtons(); batchLog(batchStopRequested ? "Đã dừng theo dõi. Backend vẫn bảo toàn job hiện tại." : "Đã xử lý xong hàng đợi."); }
-$("#runSingle").onclick = () => { const item = batchFiles.find((entry) => entry.selected); if (item) void runBatch([item]); };
-$("#runBatch").onclick = () => void runBatch(batchFiles.filter((item) => item.selected));
+async function runBatch(items) {
+  if (batchRunning) return;
+  const runnableItems = (items || []).filter(isRunnableBatchItem);
+  if (!runnableItems.length) { batchLog("Chưa chọn voice hợp lệ để chạy. Hãy chọn ít nhất một voice và bảo đảm kho tư liệu đã sẵn sàng."); return; }
+  batchRunning = true; batchStopRequested = false; updateBatchButtons();
+  let processedCount = 0;
+  for (const item of runnableItems) {
+    if (batchStopRequested) break;
+    try { await processBatchItem(item); processedCount += 1; }
+    catch (error) { item.status = "Lỗi"; item.error = error.message; renderBatchList(); batchLog(`✕ ${item.file?.name || item.fileName}: ${error.message}`); }
+  }
+  batchRunning = false; updateBatchButtons();
+  if (batchStopRequested) batchLog("Đã dừng theo dõi. Backend vẫn bảo toàn job hiện tại.");
+  else if (processedCount > 0) batchLog(`Đã xử lý xong ${processedCount} file trong hàng đợi.`);
+  else batchLog("Hàng đợi chưa xử lý được file nào. Hãy xem lỗi của từng file ở danh sách bên trái.");
+}
+$("#runSingle").onclick = () => { const item = batchFiles.find((entry) => entry.selected && isRunnableBatchItem(entry)); if (item) void runBatch([item]); else batchLog("Chưa chọn voice mới hoặc job cần tiếp tục để chạy."); };
+$("#runBatch").onclick = () => { const items = batchFiles.filter((item) => item.selected); if (items.length) void runBatch(items); else batchLog("Chưa chọn voice để chạy. Hãy tích chọn ít nhất một file."); };
 async function restoreServerJobs() { try { const response = await fetch("/api/jobs"), data = await response.json(); for (const job of data.jobs || []) { let item = batchFiles.find((entry) => entry.jobId === job.id); if (!item) { item = { jobId:job.id, fileName:job.name, selected:job.status !== "completed", logCount:job.logs?.length || 0 }; batchFiles.push(item); } item.serverStatus=job.status; item.status=({queued:"Chờ chạy",transcribing:"Tạo timestamp",rendering:"Đang render",completed:"Hoàn tất",failed:"Lỗi"})[job.status]||job.status; item.stage=job.stage; item.progress=job.progress; item.error=job.error; item.output=job.output; } renderBatchList(); } catch { batchLog("Chưa kết nối được kho job; giao diện sẽ thử lại."); } }
 renderBatchList(); void restoreServerJobs(); setInterval(() => { if (!batchRunning) void restoreServerJobs(); }, 5000);

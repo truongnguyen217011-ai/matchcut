@@ -190,3 +190,16 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Chỉ đưa `folderPaths` vào danh sách field của profile là chưa đủ; thao tác chọn/quét folder phải tự snapshot và lưu profile ngay, không phụ thuộc người dùng bấm “Lưu”.
 - Khi mở tool hoặc đổi kênh, phải xóa kho đang hiển thị, nạp đường dẫn của đúng kênh rồi tự quét lại trực tiếp từ ổ đĩa.
 - Mỗi lượt tự quét mang generation và profile id; kết quả trả chậm của kênh cũ không được ghi đè kho của kênh mới.
+
+### 27. Hàng đợi rỗng không được báo hoàn tất
+
+- Triệu chứng: bấm Chạy khi chưa chọn file hoặc không có item hợp lệ, vòng lặp không chạy nhưng giao diện vẫn ghi “Đã xử lý xong hàng đợi”.
+- Trước khi bật trạng thái chạy, phải lọc và xác nhận có ít nhất một item gồm job chưa hoàn tất hoặc voice mới kèm kho tư liệu sẵn sàng. Job đã `completed` không được coi là có thể chạy lại chỉ vì còn `jobId`.
+- Chỉ ghi “Đã xử lý xong” khi bộ đếm file thực sự xử lý lớn hơn 0; hàng đợi rỗng và toàn bộ file lỗi phải có thông báo riêng, không được tạo tín hiệu hoàn tất giả.
+
+### 28. File cấu hình kênh phải được lưu bền vững trên máy
+
+- Trình duyệt không được phép tự khôi phục giá trị của `<input type="file">` sau khi tải lại; lưu tên file trong localStorage không làm file khả dụng cho FFmpeg.
+- Khi bấm Lưu kênh, Intro, Outro, Overlay/Subscribe, Watermark và nhạc nền phải được chép vào `data/profile-assets/<profileId>` cùng manifest. Giao diện lưu metadata trong profile và hiển thị rõ tên tệp đã lưu.
+- Khi tạo job hoặc render thủ công mà người dùng không chọn tệp mới, backend phải tự nạp tài sản đã lưu theo `profileId`. Mỗi job vẫn sao chép tài sản vào thư mục input riêng để job không hỏng nếu cấu hình kênh được thay đổi về sau.
+- Khi đổi kênh phải xóa giá trị file input đang tạm chọn để không mang nhầm tệp chưa lưu từ kênh cũ sang kênh mới.

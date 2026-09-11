@@ -27,6 +27,7 @@ import { buildWaveformSourceFilters } from "./waveform-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
+  profileAssetsRoot = path.join(root, "data", "profile-assets"),
   projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
@@ -35,6 +36,7 @@ const root = path.dirname(fileURLToPath(import.meta.url)),
   port = Number(process.env.MATCHCUT_PORT) || 4173;
 await mkdir(jobsRoot, { recursive: true });
 await mkdir(persistentRoot, { recursive: true });
+await mkdir(profileAssetsRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
@@ -52,6 +54,24 @@ app.use(
   }),
 );
 let whisperPromise;
+const profileAssetFields = ["intro", "outro", "overlay", "watermark", "music"];
+function safeProfileId(value) { const id = String(value || ""); if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Mã kênh không hợp lệ."); return id; }
+async function readProfileAssetManifest(profileId) { try { return JSON.parse(await readFile(path.join(profileAssetsRoot, safeProfileId(profileId), "manifest.json"), "utf8")); } catch { return {}; } }
+async function resolveProfileAssetFiles(profileId) {
+  if (!profileId) return {};
+  const id = safeProfileId(profileId), manifest = await readProfileAssetManifest(id), files = {};
+  for (const field of profileAssetFields) {
+    const item = manifest[field]; if (!item?.storedName) continue;
+    const filePath = path.join(profileAssetsRoot, id, item.storedName);
+    try { const info = await stat(filePath); files[field] = [{ path:filePath, originalname:item.originalName || item.storedName, size:info.size, profileAsset:true }]; } catch {}
+  }
+  return files;
+}
+async function applySavedProfileAssets(req) {
+  const saved = await resolveProfileAssetFiles(req.body?.profileId);
+  req.files ||= {};
+  for (const field of profileAssetFields) if (!req.files[field]?.[0] && saved[field]?.[0]) req.files[field] = saved[field];
+}
 function getWhisper() {
   whisperPromise ??= pipeline(
     "automatic-speech-recognition",
@@ -452,6 +472,7 @@ app.post(
     };
     await mkdir(dir, { recursive: true });
     try {
+      await applySavedProfileAssets(req);
       const voice = req.files?.voice?.[0],
         media = req.files?.media || [],
         scenes = JSON.parse(req.body.scenes || "[]"),
@@ -919,8 +940,10 @@ app.post("/api/jobs", jobUpload, async (req, res) => {
     const moveRecord = async (file, field) => {
       if (!file) return null;
       const destination = path.join(inputs, `${field}-${crypto.randomUUID()}${path.extname(file.originalname)}`);
-      await rename(file.path, destination); return { path: destination, originalName: file.originalname, size: file.size };
+      if (file.profileAsset) await copyFile(file.path, destination); else await rename(file.path, destination);
+      return { path: destination, originalName: file.originalname, size: file.size };
     };
+    await applySavedProfileAssets(req);
     const files = { voice: await moveRecord(voice, "voice"), subtitle: await moveRecord(req.files?.subtitle?.[0], "subtitle") };
     for (const field of ["intro", "outro", "overlay", "watermark", "music"]) files[field] = await moveRecord(req.files?.[field]?.[0], field);
     const assetSpecs = JSON.parse(req.body.assets || "[]"), uploaded = req.files?.media || [];
@@ -959,9 +982,32 @@ app.delete("/api/jobs", async (_req, res) => {
   }
 });
 app.get("/api/jobs/:id", (req, res) => { const job = persistentJobs.get(req.params.id); return job ? res.json(jobPublic(job)) : res.status(404).json({ error: "Không tìm thấy job." }); });
+app.delete("/api/jobs/:id", async (req, res) => {
+  const job = persistentJobs.get(req.params.id); if (!job) return res.status(404).json({ error:"Không tìm thấy job." });
+  if (["queued", "transcribing", "rendering"].includes(job.status)) return res.status(409).json({ error:"Không thể xóa job đang xử lý." });
+  await Promise.allSettled([persistentSaveQueues.get(job.id)]); persistentJobs.delete(job.id); persistentSaveQueues.delete(job.id);
+  await rm(path.join(persistentRoot, job.id), { recursive:true, force:true }); res.json({ ok:true, deleted:job.id, outputPreserved:true });
+});
 app.post("/api/jobs/:id/retry", async (req, res) => {
   const job = persistentJobs.get(req.params.id); if (!job) return res.status(404).json({ error: "Không tìm thấy job." });
   job.status = "queued"; job.error = null; addJobLog(job, `Yêu cầu tiếp tục từ ${job.transcript ? "render" : "timestamp"}.`); await savePersistentJob(job); res.json(jobPublic(job)); void pumpPersistentJobs();
+});
+const profileAssetUpload = upload.fields(profileAssetFields.map((name) => ({ name, maxCount: 1 })));
+app.post("/api/profile-assets/:profileId", profileAssetUpload, async (req, res) => {
+  try {
+    const id = safeProfileId(req.params.profileId), dir = path.join(profileAssetsRoot, id);
+    await mkdir(dir, { recursive: true });
+    const manifest = await readProfileAssetManifest(id);
+    for (const field of profileAssetFields) {
+      const file = req.files?.[field]?.[0]; if (!file) continue;
+      for (const entry of await readdir(dir, { withFileTypes:true })) if (entry.isFile() && entry.name.startsWith(`${field}-`)) await rm(path.join(dir, entry.name), { force:true });
+      const storedName = `${field}-${crypto.randomUUID()}${path.extname(file.originalname)}`;
+      await rename(file.path, path.join(dir, storedName));
+      manifest[field] = { storedName, originalName:file.originalname, size:file.size, updatedAt:new Date().toISOString() };
+    }
+    await writeFile(path.join(dir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+    res.json({ ok:true, assets:Object.fromEntries(profileAssetFields.filter((field) => manifest[field]).map((field) => [field, { originalName:manifest[field].originalName, size:manifest[field].size }])) });
+  } catch (error) { res.status(400).json({ error:error instanceof Error ? error.message : String(error) }); }
 });
 app.get("/api/project-state", async (_req, res) => { try { res.json(JSON.parse(await readFile(projectStatePath, "utf8"))); } catch { res.json({}); } });
 app.put("/api/project-state", async (req, res) => { await mkdir(path.dirname(projectStatePath), { recursive: true }); await writeFile(projectStatePath, JSON.stringify(req.body, null, 2), "utf8"); res.json({ ok: true }); });
