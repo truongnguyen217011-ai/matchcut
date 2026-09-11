@@ -84,3 +84,28 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Nếu graph quá dài hoặc gặp định dạng lạ, backend tự rơi về pipeline hai lượt để không làm hỏng hàng đợi.
 - Kiểm thử bắt buộc cả video lặp cùng nguồn, ảnh lặp cùng nguồn, chuyển cảnh random/zoom, phụ đề, nhạc, hai waveform, overlay và watermark xoay.
 - So sánh cùng bài 1080p 60 giây: hai lượt mất 12,61 giây; single-pass mất 6,62 giây. File single-pass 4,86 MB, giải mã đủ 60 giây với exit code 0 và API trả `renderPipeline: single-pass`, `renderEncoder: h264_nvenc`.
+
+### 11. Job dài phải được lưu bền vững và tiếp tục từ checkpoint
+
+- Project, hàng đợi, file đầu vào, timestamp, trạng thái, công đoạn, log lỗi và kết quả phải nằm trên ổ đĩa; không chỉ giữ trong bộ nhớ trình duyệt hoặc Node.
+- Khi backend khởi động lại, job đang chờ/đang chạy phải tự xếp hàng lại. Nếu đã có timestamp thì bỏ qua nhận dạng và tiếp tục từ render.
+- Kết quả hoàn thành được giữ 24 giờ để người dùng kiểm tra; video xuất ở `C:\MatchCut\Exports` không bị bộ dọn job xóa.
+
+### 12. Kết nối nội bộ render dài cần heartbeat đúng giao thức
+
+- `fetch` nội bộ có thể hết thời gian chờ nếu API render không gửi dữ liệu trong khoảng 5 phút, dù FFmpeg vẫn chạy.
+- API job dài phải flush header sớm và gửi heartbeat định kỳ. Sau khi đã gửi header, không được gọi `res.json()` vì sẽ gây `Cannot set headers after they are sent to the client`; phải kết thúc body bằng JSON qua `res.end()`.
+- Kiểm thử bắt buộc kéo dài quá 5 phút và xác nhận job vẫn chuyển sang `completed`.
+
+### 13. Timeline phải phủ toàn bộ thời lượng file voice
+
+- Thời lượng Faster-Whisper có thể dừng ở lời nói cuối và bỏ phần im lặng cuối tệp.
+- Luôn probe thời lượng vật lý bằng FFmpeg và lấy giá trị lớn nhất giữa kết quả probe và engine nhận dạng; cảnh cuối phải kéo dài đến mốc đó.
+- Không được cộng riêng `chunk.end - chunk.start` vì cách đó xóa mọi khoảng nghỉ giữa các câu. Cảnh đầu bắt đầu tại 0, mỗi cảnh kết thúc tại thời điểm bắt đầu của chunk kế tiếp, cảnh cuối kết thúc theo thời lượng voice thực.
+- Không coi file đạt chỉ vì giải mã được: Duration của MP4 cũng phải khớp voice trong sai số codec hợp lý.
+
+### 14. Filter graph và lỗi encoder phải được phân loại chính xác
+
+- Timeline hàng trăm cảnh có thể làm single-pass cạn bộ nhớ; từ 121 cảnh trở lên chuyển sang pipeline hai lượt an toàn.
+- Mọi nhánh hiệu ứng/chuyển cảnh phải chuẩn hóa `setsar=1` trước khi ghép để tránh lỗi SAR không đồng nhất.
+- Chỉ vô hiệu NVENC khi stderr thực sự báo lỗi NVENC/CUDA. Lỗi filter, nguồn hoặc SAR phải được báo đúng nguyên nhân, không âm thầm chuyển CPU.

@@ -43,6 +43,7 @@ def transcribe(audio_path, language, model_name, device, compute_type):
     return {
         "language": info.language,
         "languageProbability": round(info.language_probability, 4),
+        "audioDuration": round(info.duration, 3),
         "text": " ".join(texts),
         "chunks": chunks,
     }

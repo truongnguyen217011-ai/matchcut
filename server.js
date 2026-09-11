@@ -2,11 +2,13 @@ import express from "express";
 import multer from "multer";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "node:child_process";
+import { openAsBlob } from "node:fs";
 import {
   copyFile,
   mkdir,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   writeFile,
@@ -19,11 +21,15 @@ import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
+  persistentRoot = path.join(root, "data", "runtime-jobs"),
+  projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
   fasterWhisperScript = path.join(root, "scripts", "faster_whisper_transcribe.py"),
-  exportRoot = process.env.MATCHCUT_EXPORT_DIR || "C:\\MatchCut\\Exports";
+  exportRoot = process.env.MATCHCUT_EXPORT_DIR || "C:\\MatchCut\\Exports",
+  port = Number(process.env.MATCHCUT_PORT) || 4173;
 await mkdir(jobsRoot, { recursive: true });
+await mkdir(persistentRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
@@ -75,6 +81,19 @@ function runCapture(command, args) {
     child.on("close", (code) => code === 0 ? resolve(output.trim()) : reject(new Error(error || `Folder picker exited ${code}`)));
   });
 }
+function probeMediaDuration(file) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], { windowsHide: true });
+    let details = "";
+    child.stderr.on("data", (chunk) => (details += chunk.toString()));
+    child.on("error", reject);
+    child.on("close", () => {
+      const match = details.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      if (!match) return reject(new Error("Không đọc được thời lượng voice."));
+      resolve(Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]));
+    });
+  });
+}
 let nvencUsable;
 async function hasNvenc() {
   if (nvencUsable !== undefined) return nvencUsable;
@@ -93,7 +112,9 @@ async function runVideoEncode(baseArgs, output) {
       await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", "p4", "-tune", "hq", "-rc", "vbr", "-cq", "23", "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
       return "h264_nvenc";
     } catch (error) {
-      console.warn(`NVENC fallback: ${error instanceof Error ? error.message : error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/nvenc|cuda|no capable devices|error while opening encoder/i.test(message)) throw error;
+      console.warn(`NVENC fallback: ${message}`);
       nvencUsable = false;
     }
   }
@@ -222,9 +243,10 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition) 
   if (transition === "rotate-in") vf += `,rotate='0.10*(1-min(t/0.55,1))':ow=iw:oh=ih:fillcolor=black`;
   if (transition === "shake-cut") vf += `,scale=${width + 80}:${height + 50},crop=${width}:${height}:x='40+18*sin(35*t)*max(0,1-t/0.5)':y='25+12*cos(31*t)*max(0,1-t/0.5)'`;
   if (transition === "flash") vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
-  return `${vf},format=yuv420p`;
+  return `${vf},setsar=1,format=yuv420p`;
 }
 async function renderSinglePass({ dir, files, voice, media, scenes, settings, width, height, overlayImagePath }) {
+  if (scenes.length > 120) throw new Error(`Timeline ${scenes.length} cảnh vượt ngưỡng single-pass an toàn 120 cảnh.`);
   const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
   const sourceMap = new Map(), resolvedScenes = [];
   for (let index = 0; index < scenes.length; index++) {
@@ -376,6 +398,15 @@ app.post(
   ]),
   async (req, res) => {
     const dir = path.join(jobsRoot, crypto.randomUUID());
+    let responseHeartbeat = null;
+    const sendRenderResult = (payload) => {
+      if (responseHeartbeat) {
+        clearInterval(responseHeartbeat);
+        responseHeartbeat = null;
+      }
+      if (res.headersSent) res.end(JSON.stringify(payload));
+      else res.json(payload);
+    };
     await mkdir(dir, { recursive: true });
     try {
       const voice = req.files?.voice?.[0],
@@ -386,6 +417,15 @@ app.post(
         return res
           .status(400)
           .json({ error: "Thiếu voice, tư liệu hoặc timeline." });
+      // Node/Undici times out if a long internal render sends no response headers
+      // for five minutes. Persistent jobs acknowledge headers immediately while
+      // keeping the JSON body open until FFmpeg really finishes.
+      if (req.body.persistentJob === "1") {
+        res.status(200);
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.flushHeaders();
+        responseHeartbeat = setInterval(() => res.write(" "), 15000);
+      }
       const segments = [];
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
       let overlayImagePath = null, renderEncoder = "copy";
@@ -401,7 +441,7 @@ app.post(
           const singlePass = await renderSinglePass({ dir, files: req.files, voice, media, scenes, settings, width, height, overlayImagePath });
           const savedPath = await availableExportPath(voice.originalname);
           await copyFile(singlePass.output, savedPath);
-          return res.json({
+          return sendRenderResult({
             ok: true,
             savedPath,
             fileName: path.basename(savedPath),
@@ -589,7 +629,7 @@ app.post(
       }
       const savedPath = await availableExportPath(voice.originalname);
       await copyFile(output, savedPath);
-      res.json({
+      sendRenderResult({
         ok: true,
         savedPath,
         fileName: path.basename(savedPath),
@@ -599,15 +639,11 @@ app.post(
         settings,
       });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          error:
-            error instanceof Error
-              ? error.message.split("\n").slice(-4).join(" ")
-              : "Không thể render video.",
-        });
+      const errorMessage = error instanceof Error ? error.message.split("\n").slice(-4).join(" ") : "Không thể render video.";
+      if (res.headersSent) res.end(JSON.stringify({ ok: false, error: errorMessage }));
+      else res.status(500).json({ error: errorMessage });
     } finally {
+      if (responseHeartbeat) clearInterval(responseHeartbeat);
       setTimeout(() => void rm(dir, { recursive: true, force: true }), 30000);
     }
   },
@@ -674,12 +710,176 @@ app.post("/api/transcribe", upload.single("voice"), async (req, res) => {
     void rm(chunkDir, { recursive: true, force: true });
   }
 });
+
+const persistentJobs = new Map();
+let persistentWorkerRunning = false;
+const jobPublic = (job) => ({
+  id: job.id, name: job.name, profileName: job.profileName, status: job.status,
+  stage: job.stage, progress: job.progress, error: job.error, logs: job.logs,
+  createdAt: job.createdAt, updatedAt: job.updatedAt, completedAt: job.completedAt,
+  output: job.output, transcriptCount: job.transcript?.chunks?.length || 0,
+  language: job.transcript?.language || job.settings?.language || "auto",
+});
+function addJobLog(job, message) {
+  job.logs ||= [];
+  job.logs.push({ at: new Date().toISOString(), message });
+  job.logs = job.logs.slice(-100);
+  job.updatedAt = new Date().toISOString();
+}
+async function savePersistentJob(job) {
+  const file = path.join(persistentRoot, job.id, "job.json"), temporary = `${file}.tmp`;
+  await writeFile(temporary, JSON.stringify(job, null, 2), "utf8");
+  try { await rename(temporary, file); }
+  catch { await rm(file, { force: true }); await rename(temporary, file); }
+}
+async function loadPersistentJobs() {
+  for (const entry of await readdir(persistentRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    try {
+      const job = JSON.parse(await readFile(path.join(persistentRoot, entry.name, "job.json"), "utf8"));
+      if (["queued", "transcribing", "rendering"].includes(job.status)) {
+        job.status = "queued";
+        addJobLog(job, `Backend khởi động lại — tự tiếp tục từ công đoạn ${job.transcript ? "render" : "timestamp"}.`);
+        await savePersistentJob(job);
+      }
+      persistentJobs.set(job.id, job);
+    } catch (error) { console.warn(`Không đọc được job ${entry.name}: ${error}`); }
+  }
+}
+function chooseJobAssets(assets, count, mode) {
+  const candidates = assets.map((_, index) => index), result = [], bag = [];
+  if (!candidates.length) return result;
+  if (mode === "sequential") return Array.from({ length: count }, (_, index) => candidates[index % candidates.length]);
+  while (result.length < count) {
+    if (mode === "random") result.push(candidates[Math.floor(Math.random() * candidates.length)]);
+    else {
+      if (!bag.length) {
+        bag.push(...candidates);
+        for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+        if (result.length && bag.length > 1 && bag[0] === result.at(-1)) [bag[0], bag[1]] = [bag[1], bag[0]];
+      }
+      result.push(bag.shift());
+    }
+  }
+  return result;
+}
+async function appendJobFile(form, field, record) {
+  if (!record?.path) return;
+  form.append(field, await openAsBlob(record.path), record.originalName || path.basename(record.path));
+}
+async function localPost(endpoint, form) {
+  const response = await fetch(`http://127.0.0.1:${port}${endpoint}`, { method: "POST", body: form });
+  const result = await response.json();
+  if (!response.ok || result.ok === false) throw new Error(result.error || `${endpoint} thất bại`);
+  return result;
+}
+async function processPersistentJob(job) {
+  try {
+    job.error = null;
+    if (!job.transcript?.chunks?.length) {
+      job.status = "transcribing"; job.stage = "Tạo timestamp"; job.progress = 10;
+      addJobLog(job, "Bắt đầu tạo timestamp bằng Faster-Whisper."); await savePersistentJob(job);
+      const form = new FormData();
+      await appendJobFile(form, "voice", job.files.voice); form.append("language", job.settings.language || "auto");
+      job.transcript = await localPost("/api/transcribe", form);
+      job.progress = 55; addJobLog(job, `Đã lưu ${job.transcript.chunks.length} timestamp; checkpoint này sẽ được dùng lại.`); await savePersistentJob(job);
+    } else addJobLog(job, `Dùng lại checkpoint ${job.transcript.chunks.length} timestamp đã lưu.`);
+
+    job.status = "rendering"; job.stage = "Render MP4"; job.progress = 60; await savePersistentJob(job);
+    const picked = chooseJobAssets(job.assets, job.transcript.chunks.length, job.selectionMode);
+    const renderForm = new FormData(); await appendJobFile(renderForm, "voice", job.files.voice);
+    const uploadedAssets = job.assets.filter((asset) => asset.uploadedPath).sort((a, b) => a.uploadIndex - b.uploadIndex);
+    for (const asset of uploadedAssets) renderForm.append("media", await openAsBlob(asset.uploadedPath), asset.name);
+    for (const field of ["intro", "outro", "overlay", "watermark", "music"]) await appendJobFile(renderForm, field, job.files[field]);
+    // Whisper's reported duration can stop at the last spoken word and omit
+    // trailing silence. The rendered timeline must cover the physical voice
+    // file, otherwise `-shortest` truncates the exported video.
+    const probedVoiceDuration = await probeMediaDuration(job.files.voice.path);
+    const voiceDuration = Math.max(Number(job.transcript.audioDuration) || 0, probedVoiceDuration);
+    const scenes = job.transcript.chunks.map((chunk, index) => {
+      const asset = job.assets[picked[index]];
+      // Render scenes must be contiguous. Summing only spoken chunk lengths
+      // removes every pause between phrases and shortens long videos.
+      const start = index === 0 ? 0 : Number(chunk.start);
+      const nextStart = Number(job.transcript.chunks[index + 1]?.start);
+      const end = Number.isFinite(nextStart) ? nextStart : voiceDuration;
+      return { start, end: Math.max(start + 0.05, end), text: chunk.text, mediaIndex: asset.uploadedPath ? asset.uploadIndex : null, mediaPath: asset.localPath || null, mediaType: asset.type };
+    });
+    renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1");
+    addJobLog(job, `Render ${scenes.length} cảnh bằng single-pass NVENC.`); await savePersistentJob(job);
+    const renderHeartbeat = setInterval(() => {
+      if (job.status !== "rendering") return;
+      job.progress = Math.min(94, Math.max(61, Number(job.progress || 60) + 1));
+      job.updatedAt = new Date().toISOString();
+      void savePersistentJob(job);
+    }, 10000);
+    try { job.output = await localPost("/api/render", renderForm); }
+    finally { clearInterval(renderHeartbeat); }
+    job.status = "completed"; job.stage = "Hoàn tất"; job.progress = 100; job.completedAt = new Date().toISOString();
+    addJobLog(job, `Đã xuất và kiểm tra hoàn tất: ${job.output.savedPath}`); await savePersistentJob(job);
+  } catch (error) {
+    job.status = "failed"; job.error = error instanceof Error ? error.message : String(error);
+    addJobLog(job, `Lỗi tại ${job.stage}: ${job.error}`); await savePersistentJob(job);
+  }
+}
+async function pumpPersistentJobs() {
+  if (persistentWorkerRunning) return;
+  persistentWorkerRunning = true;
+  try {
+    while (true) {
+      const next = [...persistentJobs.values()].find((job) => job.status === "queued");
+      if (!next) break;
+      await processPersistentJob(next);
+    }
+  } finally { persistentWorkerRunning = false; }
+}
+const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "media", maxCount: 100 }, { name: "intro", maxCount: 1 }, { name: "outro", maxCount: 1 }, { name: "overlay", maxCount: 1 }, { name: "watermark", maxCount: 1 }, { name: "music", maxCount: 1 }]);
+app.post("/api/jobs", jobUpload, async (req, res) => {
+  const voice = req.files?.voice?.[0];
+  if (!voice) return res.status(400).json({ error: "Chưa có file voice." });
+  const id = crypto.randomUUID(), dir = path.join(persistentRoot, id), inputs = path.join(dir, "inputs");
+  try {
+    await mkdir(inputs, { recursive: true });
+    const moveRecord = async (file, field) => {
+      if (!file) return null;
+      const destination = path.join(inputs, `${field}-${crypto.randomUUID()}${path.extname(file.originalname)}`);
+      await rename(file.path, destination); return { path: destination, originalName: file.originalname, size: file.size };
+    };
+    const files = { voice: await moveRecord(voice, "voice") };
+    for (const field of ["intro", "outro", "overlay", "watermark", "music"]) files[field] = await moveRecord(req.files?.[field]?.[0], field);
+    const assetSpecs = JSON.parse(req.body.assets || "[]"), uploaded = req.files?.media || [];
+    const assets = [];
+    for (const spec of assetSpecs) {
+      if (spec.uploadIndex !== null && spec.uploadIndex !== undefined) {
+        const record = await moveRecord(uploaded[spec.uploadIndex], `media-${spec.uploadIndex}`);
+        if (!record) throw new Error(`Thiếu file tư liệu ${spec.name}`);
+        assets.push({ ...spec, uploadedPath: record.path });
+      } else assets.push(spec);
+    }
+    if (!assets.length) throw new Error("Chưa có kho tư liệu.");
+    const now = new Date().toISOString(), settings = JSON.parse(req.body.settings || "{}");
+    const job = { id, name: voice.originalname, profileName: settings.profileName || "Kênh mặc định", status: "queued", stage: "Chờ xử lý", progress: 0, error: null, logs: [], createdAt: now, updatedAt: now, completedAt: null, files, assets, settings, selectionMode: req.body.selectionMode || "shuffle", transcript: null, output: null };
+    addJobLog(job, "Đã lưu project và file đầu vào vào ổ máy."); persistentJobs.set(id, job); await savePersistentJob(job);
+    res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
+  } catch (error) { await rm(dir, { recursive: true, force: true }); res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
+});
+app.get("/api/jobs", (_req, res) => res.json({ jobs: [...persistentJobs.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(jobPublic) }));
+app.get("/api/jobs/:id", (req, res) => { const job = persistentJobs.get(req.params.id); return job ? res.json(jobPublic(job)) : res.status(404).json({ error: "Không tìm thấy job." }); });
+app.post("/api/jobs/:id/retry", async (req, res) => {
+  const job = persistentJobs.get(req.params.id); if (!job) return res.status(404).json({ error: "Không tìm thấy job." });
+  job.status = "queued"; job.error = null; addJobLog(job, `Yêu cầu tiếp tục từ ${job.transcript ? "render" : "timestamp"}.`); await savePersistentJob(job); res.json(jobPublic(job)); void pumpPersistentJobs();
+});
+app.get("/api/project-state", async (_req, res) => { try { res.json(JSON.parse(await readFile(projectStatePath, "utf8"))); } catch { res.json({}); } });
+app.put("/api/project-state", async (req, res) => { await mkdir(path.dirname(projectStatePath), { recursive: true }); await writeFile(projectStatePath, JSON.stringify(req.body, null, 2), "utf8"); res.json({ ok: true }); });
+async function cleanupPersistentJobs() {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  for (const [id, job] of persistentJobs) if (job.status === "completed" && Date.parse(job.completedAt) < cutoff) { await rm(path.join(persistentRoot, id), { recursive: true, force: true }); persistentJobs.delete(id); }
+}
 app.get("/api/health", async (_req, res) => {
   let transcriptionEngine = "whisper-js-fallback";
   try { await stat(fasterWhisperPython); transcriptionEngine = "faster-whisper"; } catch {}
   res.json({ ok: true, engine: "FFmpeg", transcriptionEngine, renderEncoder: await hasNvenc() ? "h264_nvenc" : "libx264" });
 });
-const port = Number(process.env.MATCHCUT_PORT) || 4173;
-app.listen(port, () =>
-  console.log(`MatchCut FFmpeg: http://localhost:${port}`),
-);
+await loadPersistentJobs();
+app.listen(port, () => { console.log(`MatchCut FFmpeg: http://localhost:${port}`); void pumpPersistentJobs(); });
+setInterval(() => void cleanupPersistentJobs(), 60 * 60 * 1000).unref();

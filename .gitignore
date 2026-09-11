@@ -3,6 +3,8 @@ node_modules/
 .cache-whisper/
 __pycache__/
 *.pyc
+data/runtime-jobs/
+data/project-state.json
 jobs/
 test-exports/
 test-exports-advanced/
