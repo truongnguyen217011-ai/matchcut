@@ -789,7 +789,8 @@ let persistentWorkerRunning = false;
 const jobPublic = (job) => ({
   id: job.id, name: job.name, profileName: job.profileName, status: job.status,
   stage: job.stage, progress: job.progress, error: job.error, logs: job.logs,
-  createdAt: job.createdAt, updatedAt: job.updatedAt, completedAt: job.completedAt,
+  createdAt: job.createdAt, startedAt: job.startedAt || job.createdAt, updatedAt: job.updatedAt,
+  completedAt: job.completedAt, failedAt: job.failedAt,
   output: job.output, transcriptCount: job.transcript?.chunks?.length || 0,
   language: job.transcript?.language || job.settings?.language || "auto",
 });
@@ -915,7 +916,7 @@ async function processPersistentJob(job) {
     job.status = "completed"; job.stage = "Hoàn tất"; job.progress = 100; job.completedAt = new Date().toISOString();
     addJobLog(job, `Đã xuất và kiểm tra hoàn tất: ${job.output.savedPath}`); await savePersistentJob(job);
   } catch (error) {
-    job.status = "failed"; job.error = error instanceof Error ? error.message : String(error);
+    job.status = "failed"; job.error = error instanceof Error ? error.message : String(error); job.failedAt = new Date().toISOString();
     addJobLog(job, `Lỗi tại ${job.stage}: ${job.error}`); await savePersistentJob(job);
   }
 }
@@ -956,8 +957,8 @@ app.post("/api/jobs", jobUpload, async (req, res) => {
       } else assets.push(spec);
     }
     if (!assets.length) throw new Error("Chưa có kho tư liệu.");
-    const now = new Date().toISOString(), settings = JSON.parse(req.body.settings || "{}");
-    const job = { id, name: voice.originalname, profileName: settings.profileName || "Kênh mặc định", status: "queued", stage: "Chờ xử lý", progress: 0, error: null, logs: [], createdAt: now, updatedAt: now, completedAt: null, files, assets, settings, selectionMode: req.body.selectionMode || "shuffle", transcript: null, output: null };
+    const now = new Date().toISOString(), requestedStart = Date.parse(req.body.startedAt), startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now, settings = JSON.parse(req.body.settings || "{}");
+    const job = { id, name: voice.originalname, profileName: settings.profileName || "Kênh mặc định", status: "queued", stage: "Chờ xử lý", progress: 0, error: null, logs: [], createdAt: now, startedAt, updatedAt: now, completedAt: null, failedAt: null, files, assets, settings, selectionMode: req.body.selectionMode || "shuffle", transcript: null, output: null };
     addJobLog(job, "Đã lưu project và file đầu vào vào ổ máy."); persistentJobs.set(id, job); await savePersistentJob(job);
     res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
   } catch (error) { await rm(dir, { recursive: true, force: true }); res.status(400).json({ error: error instanceof Error ? error.message : String(error) }); }
@@ -990,7 +991,9 @@ app.delete("/api/jobs/:id", async (req, res) => {
 });
 app.post("/api/jobs/:id/retry", async (req, res) => {
   const job = persistentJobs.get(req.params.id); if (!job) return res.status(404).json({ error: "Không tìm thấy job." });
-  job.status = "queued"; job.error = null; addJobLog(job, `Yêu cầu tiếp tục từ ${job.transcript ? "render" : "timestamp"}.`); await savePersistentJob(job); res.json(jobPublic(job)); void pumpPersistentJobs();
+  const requestedStart = Date.parse(req.body?.startedAt), now = new Date().toISOString();
+  job.status = "queued"; job.error = null; job.startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now; job.completedAt = null; job.failedAt = null;
+  addJobLog(job, `Yêu cầu tiếp tục từ ${job.transcript ? "render" : "timestamp"}.`); await savePersistentJob(job); res.json(jobPublic(job)); void pumpPersistentJobs();
 });
 const profileAssetUpload = upload.fields(profileAssetFields.map((name) => ({ name, maxCount: 1 })));
 app.post("/api/profile-assets/:profileId", profileAssetUpload, async (req, res) => {

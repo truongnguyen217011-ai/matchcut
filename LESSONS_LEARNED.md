@@ -209,3 +209,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Không chỉ ghi log hoặc phần trăm nhỏ trong danh sách. Bảng tiến độ phải có tên video đang xử lý, vị trí `Video X/Y`, công đoạn hiện tại, phần trăm lớn và thanh tiến độ.
 - Dữ liệu hiển thị phải lấy từ `job.progress` và `job.stage` của backend, cập nhật cùng nhịp polling; không dùng thanh chạy giả theo thời gian.
 - Khi lỗi, giữ nguyên tên video, phần trăm cuối và công đoạn lỗi. Khi hoàn tất, chỉ hiển thị 100% sau khi backend đã render và kiểm tra MP4.
+
+### 30. Thời gian xử lý phải tính từ lúc người dùng bấm Chạy
+
+- Mốc bắt đầu của từng video là thời điểm người dùng bấm `Chạy 1 file` hoặc `Chạy hàng loạt`, không phải lúc FFmpeg bắt đầu. Với hàng loạt, thời gian chờ của các video sau trong hàng đợi cũng được tính.
+- Phải lưu bền vững `startedAt`, `completedAt` và `failedAt` trong job để tải lại giao diện hoặc khởi động lại backend vẫn giữ đúng số liệu.
+- Khi đang chạy, thời gian đã chạy phải cập nhật theo đồng hồ thật. Khi hoàn tất hoặc lỗi, đóng băng số liệu và hiển thị giờ kết thúc cùng tổng phút/giây.
+- Chỉ ghi nhận hoàn thành sau khi MP4 đã render và vượt qua bước kiểm tra giải mã, không lấy thời điểm FFmpeg mới dừng làm kết quả giả.
