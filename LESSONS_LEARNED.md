@@ -75,3 +75,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Cả bước tạo scene và bước gắn phụ đề/lớp phủ cuối phải dùng `h264_nvenc`; khi GPU lỗi mới tự hạ xuống `libx264`.
 - Dùng NVENC VBR, preset `p4`, CQ 23, bitrate mục tiêu 4 Mbps và trần 8 Mbps để cân bằng tốc độ, chất lượng và dung lượng.
 - Kiểm thử: video 1080p dài 60 giây có phụ đề/chuyển cảnh hoàn thành trong 12,61 giây, file 4,80 MB; giải mã đủ 60 giây với exit code 0 và API trả `renderEncoder: h264_nvenc`.
+
+### 10. Video dài phải ưu tiên single-pass
+
+- Pipeline cũ mã hóa từng cảnh rồi mã hóa lại khi gắn phụ đề/lớp phủ, làm video dài tốn gần gấp đôi thời gian và tạo nhiều file trung gian.
+- Pipeline mới gom các nguồn footage duy nhất, dùng `split`, `trim`, `setpts` và `concat` trong một filter graph; voice, nhạc, waveform, overlay, watermark và phụ đề được ghép trong cùng một tiến trình FFmpeg rồi NVENC mã hóa đúng một lần.
+- Nếu graph quá dài hoặc gặp định dạng lạ, backend tự rơi về pipeline hai lượt để không làm hỏng hàng đợi.
+- Kiểm thử bắt buộc cả video lặp cùng nguồn, ảnh lặp cùng nguồn, chuyển cảnh random/zoom, phụ đề, nhạc, hai waveform, overlay và watermark xoay.
+- So sánh cùng bài 1080p 60 giây: hai lượt mất 12,61 giây; single-pass mất 6,62 giây. File single-pass 4,86 MB, giải mã đủ 60 giây với exit code 0 và API trả `renderPipeline: single-pass`, `renderEncoder: h264_nvenc`.

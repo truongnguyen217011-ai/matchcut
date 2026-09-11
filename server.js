@@ -204,6 +204,130 @@ async function findOverlayImages(folder) {
   }
   return results;
 }
+function sceneVideoFilter(scene, settings, width, height, duration, transition) {
+  let vf = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
+  const darkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
+  if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
+  if (transition === "fade") vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
+  if (transition === "cinematic-fade") vf += `,eq=contrast=1.08:saturation=0.92,fade=t=in:st=0:d=${Math.min(0.7, duration / 3).toFixed(2)}:color=black`;
+  if (transition === "zoom-in" && scene.mediaType === "image") vf += `,zoompan=z='min(zoom+0.0008,1.08)':d=1:s=${width}x${height}:fps=30`;
+  if (transition === "zoom-out" && scene.mediaType === "image") vf += `,zoompan=z='if(eq(on,1),1.08,max(zoom-0.0008,1.0))':d=1:s=${width}x${height}:fps=30`;
+  if (transition === "cross-zoom" && scene.mediaType === "image") vf += `,zoompan=z='if(lt(on,14),1.32-0.02*on,1.04)':d=1:s=${width}x${height}:fps=30,fade=t=in:st=0:d=${Math.min(0.2, duration / 4).toFixed(2)}`;
+  if (transition === "slide-left") vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*(1-min(t/${duration.toFixed(3)},1))':y=22`;
+  if (transition === "slide-right") vf += `,scale=${width + 80}:${height + 45},crop=${width}:${height}:x='80*min(t/${duration.toFixed(3)},1)':y=22`;
+  if (transition === "pan-up") vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*(1-min(t/${duration.toFixed(3)},1))'`;
+  if (transition === "pan-down") vf += `,scale=${width}:${height + 80},crop=${width}:${height}:x=0:y='80*min(t/${duration.toFixed(3)},1)'`;
+  if (transition === "diagonal-up") vf += `,scale=${width + 80}:${height + 80},crop=${width}:${height}:x='80*(1-min(t/${duration.toFixed(3)},1))':y='80*(1-min(t/${duration.toFixed(3)},1))'`;
+  if (transition === "diagonal-down") vf += `,scale=${width + 80}:${height + 80},crop=${width}:${height}:x='80*min(t/${duration.toFixed(3)},1)':y='80*min(t/${duration.toFixed(3)},1)'`;
+  if (transition === "rotate-in") vf += `,rotate='0.10*(1-min(t/0.55,1))':ow=iw:oh=ih:fillcolor=black`;
+  if (transition === "shake-cut") vf += `,scale=${width + 80}:${height + 50},crop=${width}:${height}:x='40+18*sin(35*t)*max(0,1-t/0.5)':y='25+12*cos(31*t)*max(0,1-t/0.5)'`;
+  if (transition === "flash") vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
+  return `${vf},format=yuv420p`;
+}
+async function renderSinglePass({ dir, files, voice, media, scenes, settings, width, height, overlayImagePath }) {
+  const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
+  const sourceMap = new Map(), resolvedScenes = [];
+  for (let index = 0; index < scenes.length; index++) {
+    const scene = scenes[index];
+    const source = scene.mediaPath && allowedLocalMedia.has(path.resolve(scene.mediaPath)) ? path.resolve(scene.mediaPath) : media[scene.mediaIndex]?.path;
+    if (!source) throw new Error(`Không tìm thấy tư liệu cho cảnh ${index + 1}`);
+    if (!sourceMap.has(source)) sourceMap.set(source, { source, type: scene.mediaType, uses: [] });
+    const entry = sourceMap.get(source);
+    entry.uses.push(index);
+    resolvedScenes.push({ ...scene, source });
+  }
+  if ([...sourceMap.keys()].join("").length > 24000) throw new Error("Danh sách đường dẫn quá dài cho single-pass.");
+
+  const inputArgs = ["-y", "-hide_banner", "-loglevel", "error"], filters = [];
+  let inputIndex = 0;
+  for (const entry of sourceMap.values()) {
+    entry.inputIndex = inputIndex++;
+    inputArgs.push(entry.type === "image" ? "-loop" : "-stream_loop", entry.type === "image" ? "1" : "-1", "-i", entry.source);
+    if (entry.uses.length > 1) {
+      entry.labels = entry.uses.map((_, branch) => `src${entry.inputIndex}_${branch}`);
+      filters.push(`[${entry.inputIndex}:v]split=${entry.uses.length}${entry.labels.map((label) => `[${label}]`).join("")}`);
+    } else entry.labels = [`${entry.inputIndex}:v`];
+  }
+  const voiceIndex = inputIndex++;
+  inputArgs.push("-i", voice.path);
+  const music = files?.music?.[0];
+  let musicIndex = null;
+  if (music) { musicIndex = inputIndex++; inputArgs.push("-stream_loop", "-1", "-i", music.path); }
+  let overlayIndex = null;
+  if (overlayImagePath) { overlayIndex = inputIndex++; inputArgs.push("-loop", "1", "-i", overlayImagePath); }
+  const watermark = files?.watermark?.[0];
+  let watermarkIndex = null;
+  if (watermark) { watermarkIndex = inputIndex++; inputArgs.push("-loop", "1", "-i", watermark.path); }
+
+  let previousTransition = "";
+  const sourceBranches = new Map([...sourceMap.entries()].map(([key, entry]) => [key, 0]));
+  resolvedScenes.forEach((scene, index) => {
+    const entry = sourceMap.get(scene.source), branch = sourceBranches.get(scene.source);
+    sourceBranches.set(scene.source, branch + 1);
+    let transition = settings.transition || "none";
+    if (transition === "random") {
+      const choices = randomTransitions.filter((item) => item !== previousTransition);
+      transition = choices[Math.floor(Math.random() * choices.length)];
+    }
+    previousTransition = transition;
+    const duration = Math.max(0.5, Number(scene.end) - Number(scene.start));
+    filters.push(`[${entry.labels[branch]}]${sceneVideoFilter(scene, settings, width, height, duration, transition)}[scene${index}]`);
+  });
+  filters.push(`${resolvedScenes.map((_, index) => `[scene${index}]`).join("")}concat=n=${resolvedScenes.length}:v=1:a=0[timeline]`);
+
+  const totalDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
+  const voiceCopies = settings.voiceWaveformEnabled ? 2 : 1;
+  if (voiceCopies > 1) filters.push(`[${voiceIndex}:a]asplit=2[voiceMixSource][voiceWaveSource]`);
+  const voiceSource = voiceCopies > 1 ? "voiceMixSource" : `${voiceIndex}:a`;
+  const voiceGain = Math.max(0, Number(settings.voiceVolume ?? 100)) / 100;
+  const delayMs = Math.max(0, Number(settings.voiceDelay || 0)) * 1000;
+  filters.push(`[${voiceSource}]volume=${voiceGain.toFixed(3)},adelay=${Math.round(delayMs)}|${Math.round(delayMs)}[voiceAudio]`);
+  if (musicIndex !== null) {
+    const musicCopies = settings.waveformEnabled ? 2 : 1;
+    if (musicCopies > 1) filters.push(`[${musicIndex}:a]asplit=2[musicMixSource][musicWaveSource]`);
+    const musicSource = musicCopies > 1 ? "musicMixSource" : `${musicIndex}:a`;
+    filters.push(`[${musicSource}]volume=${(Math.max(0, Number(settings.musicVolume || 6)) / 100).toFixed(3)},atrim=duration=${totalDuration.toFixed(3)}[musicAudio]`);
+    filters.push("[voiceAudio][musicAudio]amix=inputs=2:duration=first:dropout_transition=2[aout]");
+  } else filters.push("[voiceAudio]anull[aout]");
+
+  let current = "timeline", layer = 0;
+  if (overlayIndex !== null) {
+    const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
+    filters.push(`[${overlayIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
+    filters.push(`[${current}][overlayimg]overlay=0:0:shortest=1[layer${++layer}]`); current = `layer${layer}`;
+  }
+  const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
+  const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
+  const addWave = (source, color, xPercent, yPercent, name) => {
+    if (!source) return;
+    const safeColor = String(color || "#ffffff").replace("#", "");
+    const centerX = width * Math.min(95, Math.max(5, Number(xPercent) || 50)) / 100, centerY = height * Math.min(95, Math.max(5, Number(yPercent) || 80)) / 100;
+    const x = Math.max(0, Math.min(width - waveWidth, Math.round(centerX - waveWidth / 2))), y = Math.max(0, Math.min(height - waveHeight, Math.round(centerY - waveHeight / 2)));
+    filters.push(`[${source}]showwaves=s=${waveWidth}x${waveHeight}:mode=line:colors=0x${safeColor}:rate=30,format=rgba[${name}]`);
+    filters.push(`[${current}][${name}]overlay=${x}:${y}:shortest=1[layer${++layer}]`); current = `layer${layer}`;
+  };
+  if (settings.waveformEnabled && musicIndex !== null) addWave("musicWaveSource", settings.waveformColor, settings.waveformX, settings.waveformY, "musicwave");
+  if (settings.voiceWaveformEnabled) addWave("voiceWaveSource", settings.voiceWaveformColor, settings.voiceWaveformX, settings.voiceWaveformY, "voicewave");
+  if (watermarkIndex !== null) {
+    const opacity = Math.min(100, Math.max(0, Number(settings.watermarkOpacity ?? 70))) / 100, speed = Math.min(45, Math.max(1, Number(settings.watermarkRotationSpeed) || 12));
+    const rotation = settings.watermarkRotate ? `,rotate='${(speed * Math.PI / 180).toFixed(6)}*t':ow=rotw(iw):oh=roth(ih):c=none` : "";
+    filters.push(`[${watermarkIndex}:v]scale=${Math.round(width * 0.12)}:-1,format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}${rotation}[wm]`);
+    filters.push(`[${current}][wm]overlay=W-w-35:35:shortest=1[layer${++layer}]`); current = `layer${layer}`;
+  }
+  if (settings.subtitleEnabled !== false) {
+    const assPath = path.join(dir, "captions.ass");
+    await writeFile(assPath, createAss(scenes, settings), "utf8");
+    const escaped = assPath.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
+    const escapedFonts = fontsRoot.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
+    filters.push(`[${current}]subtitles=filename='${escaped}':fontsdir='${escapedFonts}'[vout]`);
+  } else filters.push(`[${current}]null[vout]`);
+
+  const graphPath = path.join(dir, "single-pass.ffgraph");
+  await writeFile(graphPath, filters.join(";\n"), "utf8");
+  const output = path.join(dir, "matchcut-output.mp4");
+  const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart"], output);
+  return { output, encoder };
+}
 app.post("/api/pick-folder", async (_req, res) => {
   try {
     const script = "Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Width=1; $owner.Height=1; $owner.StartPosition='CenterScreen'; $owner.Show(); $owner.Activate(); $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description='Chọn thư mục tư liệu cho MatchCut'; $dialog.ShowNewFolderButton=$false; $result=$dialog.ShowDialog($owner); $owner.Close(); if($result -eq [System.Windows.Forms.DialogResult]::OK){[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath}";
@@ -271,6 +395,24 @@ app.post(
         const folderKey = path.resolve(settings.overlayImageFolder), previous = lastOverlaySelections.get(folderKey), choices = overlayFiles.length > 1 ? overlayFiles.filter((file) => file !== previous) : overlayFiles;
         overlayImagePath = choices[Math.floor(Math.random() * choices.length)];
         lastOverlaySelections.set(folderKey, overlayImagePath);
+      }
+      if (settings.singlePassRender !== false) {
+        try {
+          const singlePass = await renderSinglePass({ dir, files: req.files, voice, media, scenes, settings, width, height, overlayImagePath });
+          const savedPath = await availableExportPath(voice.originalname);
+          await copyFile(singlePass.output, savedPath);
+          return res.json({
+            ok: true,
+            savedPath,
+            fileName: path.basename(savedPath),
+            overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
+            renderEncoder: singlePass.encoder,
+            renderPipeline: "single-pass",
+            settings,
+          });
+        } catch (singlePassError) {
+          console.warn(`Single-pass fallback: ${singlePassError instanceof Error ? singlePassError.message : singlePassError}`);
+        }
       }
       const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
       let previousTransition = "";
@@ -453,6 +595,7 @@ app.post(
         fileName: path.basename(savedPath),
         overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
         renderEncoder,
+        renderPipeline: "legacy-two-pass-fallback",
         settings,
       });
     } catch (error) {
