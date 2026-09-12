@@ -11,7 +11,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install-portable.ps1
 ```
 
-4. Chay tool:
+4. Nhap dup `Start-MatchCut.cmd`. Lan dau script tu cai dependencies, cac lan sau mo thang tool.
+
+Neu muon chay thu cong:
 
 ```powershell
 .\start-portable.ps1
