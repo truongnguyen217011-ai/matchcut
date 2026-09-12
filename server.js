@@ -26,12 +26,14 @@ import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 import { fileMetadataMatches } from "./media-cache-utils.js";
 import { isValidCachedTranscript, transcriptCacheKey } from "./transcript-cache-utils.js";
+import { boundaryCacheKey } from "./boundary-cache-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
   profileAssetsRoot = path.join(root, "data", "profile-assets"),
   mediaDurationCachePath = path.join(root, "data", "media-duration-cache.json"),
   transcriptCacheRoot = path.join(root, "data", "transcript-cache"),
+  boundaryCacheRoot = path.join(root, "data", "boundary-cache"),
   projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
@@ -42,6 +44,7 @@ await mkdir(jobsRoot, { recursive: true });
 await mkdir(persistentRoot, { recursive: true });
 await mkdir(profileAssetsRoot, { recursive: true });
 await mkdir(transcriptCacheRoot, { recursive: true });
+await mkdir(boundaryCacheRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
@@ -245,6 +248,48 @@ async function normalizeBoundaryVideo(source, output, width, height, fast) {
   );
   await runVideoEncode(args, output, { fast });
 }
+const verifiedBoundaryCache = new Set();
+async function verifyBoundaryVideo(file) {
+  const info = await stat(file);
+  if (!info.size) throw new Error("Cache intro/outro rỗng.");
+  await run(["-v", "error", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "NUL"]);
+  return cachedMediaDuration(file);
+}
+async function normalizedBoundary({ source, fallbackOutput, width, height, fast, encoder }) {
+  let temporary;
+  try {
+    const sourceHash = await hashFile(source), key = boundaryCacheKey(sourceHash, { width, height, fast, encoder });
+    const cached = path.join(boundaryCacheRoot, `${key}.mp4`);
+    try {
+      const duration = verifiedBoundaryCache.has(key) ? await cachedMediaDuration(cached) : await verifyBoundaryVideo(cached);
+      verifiedBoundaryCache.add(key);
+      return { file:cached, duration, cacheHit:true };
+    } catch {
+      verifiedBoundaryCache.delete(key);
+      mediaDurationCache.delete(path.resolve(cached));
+      await rm(cached, { force:true });
+    }
+    temporary = path.join(boundaryCacheRoot, `${key}.${crypto.randomUUID()}.tmp.mp4`);
+    await normalizeBoundaryVideo(source, temporary, width, height, fast);
+    const duration = await verifyBoundaryVideo(temporary);
+    try { await rename(temporary, cached); }
+    catch {
+      await rm(temporary, { force:true });
+      const existingDuration = await verifyBoundaryVideo(cached);
+      verifiedBoundaryCache.add(key);
+      return { file:cached, duration:existingDuration, cacheHit:true };
+    }
+    mediaDurationCache.delete(path.resolve(temporary));
+    mediaDurationCache.set(path.resolve(cached), Promise.resolve(duration));
+    verifiedBoundaryCache.add(key);
+    return { file:cached, duration, cacheHit:false };
+  } catch (error) {
+    if (temporary) await rm(temporary, { force:true }).catch(() => {});
+    console.warn(`Cache intro/outro không khả dụng, dùng file theo job: ${error instanceof Error ? error.message : error}`);
+    await normalizeBoundaryVideo(source, fallbackOutput, width, height, fast);
+    return { file:fallbackOutput, duration:await cachedMediaDuration(fallbackOutput), cacheHit:false };
+  }
+}
 async function attachIntroOutro({ dir, content, files, width, height, fast, onProgress }) {
   const intro = files?.intro?.[0], outro = files?.outro?.[0];
   const contentSegments = (Array.isArray(content) ? content : [{ file:content }]).filter((segment) => segment?.file);
@@ -252,15 +297,15 @@ async function attachIntroOutro({ dir, content, files, width, height, fast, onPr
   await onProgress?.("Ghép Intro và Outro", 96);
   // Intro and outro are independent, short encodes. Normalize both together
   // while the long content chunks stay untouched, then restore timeline order.
-  const boundaryConcurrency = await hasNvenc() ? 2 : 1;
+  const nvenc = await hasNvenc(), boundaryConcurrency = nvenc ? 2 : 1;
+  const encoder = nvenc ? `h264_nvenc:${fast ? "p2" : "p4"}:cq23` : "libx264:veryfast:crf22";
   const boundaryPlans = [
-    intro && { source:intro.path, output:path.join(dir, "normalized-intro.mp4") },
-    outro && { source:outro.path, output:path.join(dir, "normalized-outro.mp4") },
+    intro && { source:intro.path, fallbackOutput:path.join(dir, "normalized-intro.mp4") },
+    outro && { source:outro.path, fallbackOutput:path.join(dir, "normalized-outro.mp4") },
   ].filter(Boolean);
-  const boundaries = await mapWithConcurrency(boundaryPlans, boundaryConcurrency, async ({ source, output }) => {
-    await normalizeBoundaryVideo(source, output, width, height, fast);
-    return { file:output, duration:await cachedMediaDuration(output) };
-  });
+  const boundaries = await mapWithConcurrency(boundaryPlans, boundaryConcurrency, (plan) => normalizedBoundary({ ...plan, width, height, fast, encoder }));
+  const cacheHits = boundaries.filter((item) => item.cacheHit).length;
+  if (cacheHits) await onProgress?.(`Ghép Intro và Outro (cache ${cacheHits}/${boundaries.length})`, 96);
   const segments = [];
   if (intro) segments.push(boundaries.shift());
   for (const segment of contentSegments) segments.push({ file:segment.file, duration:segment.duration || await cachedMediaDuration(segment.file) });

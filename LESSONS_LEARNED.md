@@ -288,3 +288,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - SRT cùng tên vẫn có ưu tiên cao hơn cache. Chỉ lưu kết quả `faster-whisper` có cue hợp lệ; không cache fallback JavaScript để lần sau còn cơ hội dùng engine tốt hơn.
 - File cache ghi bằng tên tạm UUID và atomic rename, lỗi đọc/ghi cache không được làm hỏng job. Thư mục `data/transcript-cache` là runtime state và không đưa vào Git.
 - Kiểm thử hai job đầy đủ dùng cùng voice 25 giây: job đầu tạo 5 timestamp trong 2,84 giây; job sau ghi rõ cache-hit và chuyển thẳng sang render trong dưới 3 giây. MP4 cache-hit giải mã toàn bộ video/audio với exit code 0.
+
+### 40. Intro và Outro đã chuẩn hóa phải được tái sử dụng theo nội dung
+
+- Hai file biên của một kênh thường không đổi giữa các job; encode lại chúng dù đã chạy song song vẫn là công việc lặp. Cache bền vững phải dùng SHA-256 nội dung nguồn, không dùng tên hoặc đường dẫn file.
+- Khóa cache phải gồm độ phân giải, chế độ nhanh, encoder và toàn bộ định dạng đích quan trọng (30 fps, yuv420p, AAC 192 kbps/48 kHz/stereo). Thay nguồn hoặc cấu hình phải sinh mục mới.
+- File mới được encode sang tên tạm UUID, giải mã kiểm tra đầy đủ rồi mới atomic rename. Sau mỗi lần backend khởi động, mục cache phải được giải mã kiểm tra một lần; mục rỗng/hỏng bị xóa riêng và tự tạo lại. Nếu thư mục cache lỗi, job fallback về file chuẩn hóa trong thư mục job.
+- Kiểm thử thật Kênh 2 sau khi restart xác nhận hai mục cache vẫn dùng được. Hai job 25 giây cold/warm hoàn tất lần lượt khoảng 64,4 và 12,9 giây (tổng thời gian còn chịu ảnh hưởng lựa chọn footage ngẫu nhiên, nên không coi toàn bộ chênh lệch là lợi ích riêng của cache). Cả hai MP4 đầu ra giải mã đủ video/audio với exit code 0.
