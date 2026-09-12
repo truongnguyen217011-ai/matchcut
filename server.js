@@ -24,10 +24,12 @@ import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
 import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapWithConcurrency } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
+import { fileMetadataMatches } from "./media-cache-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
   profileAssetsRoot = path.join(root, "data", "profile-assets"),
+  mediaDurationCachePath = path.join(root, "data", "media-duration-cache.json"),
   projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
@@ -119,10 +121,39 @@ function probeMediaDuration(file) {
     });
   });
 }
+let persistentMediaDurations = {};
+try {
+  const saved = JSON.parse(await readFile(mediaDurationCachePath, "utf8"));
+  if (saved?.version === 1 && saved.entries && typeof saved.entries === "object") persistentMediaDurations = saved.entries;
+} catch {}
 const mediaDurationCache = new Map();
+let mediaDurationCacheDirty = false, mediaDurationSaveQueue = Promise.resolve();
+function isPersistentMediaSource(file) {
+  const relativeJobs = path.relative(jobsRoot, file), relativePersistent = path.relative(persistentRoot, file);
+  return (relativeJobs.startsWith("..") || path.isAbsolute(relativeJobs)) && (relativePersistent.startsWith("..") || path.isAbsolute(relativePersistent));
+}
+async function savePersistentMediaDurations() {
+  if (!mediaDurationCacheDirty) return;
+  mediaDurationCacheDirty = false;
+  const snapshot = JSON.stringify({ version:1, entries:persistentMediaDurations }, null, 2), temp = `${mediaDurationCachePath}.${crypto.randomUUID()}.tmp`;
+  mediaDurationSaveQueue = mediaDurationSaveQueue.catch(() => {}).then(async () => {
+    await writeFile(temp, snapshot, "utf8");
+    await rename(temp, mediaDurationCachePath);
+  });
+  await mediaDurationSaveQueue;
+}
 async function cachedMediaDuration(file) {
   const key = path.resolve(file);
-  if (!mediaDurationCache.has(key)) mediaDurationCache.set(key, probeMediaDuration(key).catch((error) => { mediaDurationCache.delete(key); throw error; }));
+  if (!mediaDurationCache.has(key)) mediaDurationCache.set(key, (async () => {
+    const info = await stat(key), saved = persistentMediaDurations[key];
+    if (isPersistentMediaSource(key) && fileMetadataMatches(saved, info)) return Number(saved.duration);
+    const duration = await probeMediaDuration(key);
+    if (isPersistentMediaSource(key)) {
+      persistentMediaDurations[key] = { duration, size:info.size, mtimeMs:info.mtimeMs };
+      mediaDurationCacheDirty = true;
+    }
+    return duration;
+  })().catch((error) => { mediaDurationCache.delete(key); throw error; }));
   return mediaDurationCache.get(key);
 }
 async function hydrateSourceDurations(entries, concurrency = 6) {
@@ -134,6 +165,12 @@ async function hydrateSourceDurations(entries, concurrency = 6) {
     }
   });
   await Promise.all(workers);
+  try {
+    await savePersistentMediaDurations();
+  } catch (error) {
+    mediaDurationCacheDirty = true;
+    console.warn(`Không lưu được cache thời lượng tư liệu: ${error instanceof Error ? error.message : error}`);
+  }
 }
 function probeHasAudio(file) {
   return new Promise((resolve, reject) => {

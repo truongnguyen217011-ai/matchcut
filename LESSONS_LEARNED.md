@@ -272,3 +272,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Giữ ranh giới cố định tối đa 24 cảnh đã được chứng minh; chỉ đổi cách chia khi có mô hình chi phí nguồn và benchmark cùng một lựa chọn tư liệu để so sánh công bằng.
 - Intro và Outro là hai encode ngắn độc lập, có thể chuẩn hóa song song bằng worker có giới hạn rồi đặt lại đúng thứ tự trước/content/sau.
 - Với tài sản thật Kênh 2, chuẩn hóa song song giảm từ 1,732 giây xuống 1,403 giây; cả hai MP4 thử giải mã video/audio với exit code 0.
+
+### 38. Cache thời lượng nguồn phải sống qua lần khởi động lại backend
+
+- Cache `Map` trong RAM chỉ tránh probe lặp trong cùng một phiên; mỗi lần mở lại tool vẫn phải chạy FFmpeg trên các nguồn ổ mạng và mất phần lớn lợi ích.
+- Lưu duration theo đường dẫn vào `data/media-duration-cache.json`, nhưng mỗi lần dùng phải đối chiếu `size` và `mtimeMs`; file bị thay hoặc sửa phải tự probe lại.
+- Không lưu đường dẫn trong `jobs` hoặc `data/runtime-jobs` vì đó là file tạm/job riêng. File cache là runtime state, không đưa vào Git.
+- Ghi cache bằng file tạm UUID rồi atomic rename và tuần tự hóa các lượt ghi; không dùng chung một tên `.tmp` giữa các worker.
+- Kiểm thử cùng 6 nguồn thật sau restart giảm từ 4,677 giây cold xuống 2,427 giây warm (tiết kiệm 2,250 giây); request 24 nguồn đã cache hoàn tất trong 6,575 giây. Các MP4 kiểm thử đều giải mã video/audio với exit code 0.
