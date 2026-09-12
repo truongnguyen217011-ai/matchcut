@@ -250,3 +250,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Manifest concat phải ghi `duration` có khoảng bảo vệ một frame giữa các đoạn. Video H.264 vẫn dùng stream-copy; audio được tạo lại liên tục bằng `aresample=async=1:first_pts=0`.
 - Trên Windows ưu tiên `aac_mf` sau khi probe mã hóa thật thành công, rồi fallback về `aac`. Với audio sản xuất 41 phút, `aac_mf` mất khoảng 15,6 giây so với khoảng 70 giây của AAC phần mềm.
 - Kiểm thử phải chặn `Non-monotonic DTS`, giải mã toàn bộ file và kiểm tra cả ranh giới giữa các khối nội dung lẫn intro/outro.
+
+### 35. Benchmark sản xuất phải mang đúng cấu hình kênh và tính từ trước khi tải file
+
+- Script benchmark phải gửi `profileId`; chỉ gửi bản sao `settings` không đủ vì backend dùng profile này để tìm intro, outro và overlay đã lưu bền vững.
+- `startedAt` phải được chụp trước khi tạo `FormData` và tải voice lên backend, rồi gửi cùng request để tổng thời gian phản ánh đúng lúc người dùng bắt đầu chạy.
+- Một lần chạy sạch Kênh 2 với 41:17,19 đầu ra, 84 cảnh, 503 cue, intro/outro/overlay và pipeline `chunked-single-pass-4` hoàn tất trong 16:34,038, thấp hơn giới hạn 17 phút 25,962 giây.
+- Chỉ công nhận kết quả sau khi xác nhận H.264 1080p30 + AAC 48 kHz stereo và giải mã toàn bộ video/audio không có lỗi DTS.
