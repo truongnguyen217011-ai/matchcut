@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { createReadStream, openAsBlob } from "node:fs";
 import {
   copyFile,
+  link,
   mkdir,
   readFile,
   readdir,
@@ -333,6 +334,29 @@ async function availableExportPath(originalName) {
     } catch {
       return candidate;
     }
+  }
+}
+async function verifyCompleteMedia(file) {
+  await run(["-v", "error", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "NUL"]);
+}
+async function publishVerifiedOutput(source, destination) {
+  const temporary = `${destination}.${crypto.randomUUID()}.partial.mp4`;
+  let mode = "hardlink";
+  try {
+    try {
+      // Jobs and exports normally share C:, so a hard link publishes even a
+      // multi-gigabyte MP4 without copying its bytes. Job cleanup only removes
+      // the other directory entry.
+      await link(source, temporary);
+    } catch {
+      mode = "copy";
+      await copyFile(source, temporary);
+    }
+    await verifyCompleteMedia(temporary);
+    await rename(temporary, destination);
+    return mode;
+  } finally {
+    await rm(temporary, { force:true });
   }
 }
 const assTime = (value) => {
@@ -672,7 +696,8 @@ app.post(
           const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
           singlePass.output = await attachIntroOutro({ dir, content: singlePass.segments || singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
           const savedPath = await availableExportPath(voice.originalname);
-          await copyFile(singlePass.output, savedPath);
+          await onProgress?.("Kiểm tra MP4 hoàn chỉnh", 98);
+          const publishMode = await publishVerifiedOutput(singlePass.output, savedPath);
           return sendRenderResult({
             ok: true,
             savedPath,
@@ -681,6 +706,7 @@ app.post(
             renderEncoder: singlePass.encoder,
             acceleration: singlePass.acceleration,
             renderPipeline: singlePass.pipeline || "single-pass",
+            publishMode,
             settings,
           });
         } catch (singlePassError) {
@@ -862,7 +888,7 @@ app.post(
       }
       const finalOutput = await attachIntroOutro({ dir, content: output, files: req.files, width, height, fast: settings.fastRender !== false });
       const savedPath = await availableExportPath(voice.originalname);
-      await copyFile(finalOutput, savedPath);
+      const publishMode = await publishVerifiedOutput(finalOutput, savedPath);
       sendRenderResult({
         ok: true,
         savedPath,
@@ -870,6 +896,7 @@ app.post(
         overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
         renderEncoder,
         renderPipeline: "legacy-two-pass-fallback",
+        publishMode,
         settings,
       });
     } catch (error) {

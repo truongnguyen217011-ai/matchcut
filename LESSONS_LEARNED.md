@@ -302,3 +302,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Benchmark Kênh 2 đầy đủ 41:17,19, 84 cảnh hình, 503 cue, intro/outro/overlay và mọi hiệu ứng hoàn tất trong 13:24,971 tính từ trước upload. Faster-Whisper cold mất khoảng 50 giây; riêng render, ghép và kiểm tra mất 12:34,607. Mốc sản xuất hai worker đã xác nhận trước đó là 15:14,728.
 - Khi ba worker cùng chạy, VRAM quan sát được là 9.214/12.288 MB, encoder 33%, decoder 49%, GPU 51°C; không có CUDA fallback hoặc CPU fallback. Chỉ còn khoảng 3 GB khoảng trống, vì vậy không tăng lên bốn worker trên máy này.
 - File cuối 715.320.482 byte giữ H.264 Main 1080p30 yuv420p và AAC-LC 48 kHz stereo 192 kbps; giải mã toàn bộ 41:17,19 trong 41,137 giây với exit code 0.
+
+### 42. Không suy tốc độ từ Duration; phải kiểm tra số frame và xuất file bằng liên kết đã xác minh
+
+- Thử chỉ đọc một frame overlay rồi dùng `eof_action=repeat` làm job 41:17 hoàn tất trong 4:24, nhưng video chỉ còn trung bình khoảng 6,43 fps dù Duration đúng và giải mã exit 0. Tạo timestamp overlay 30 fps khôi phục đủ frame nhưng cũng làm mất lợi ích tốc độ. Vì vậy phải giữ đường overlay loop 1 fps đã chứng minh và luôn kiểm tra cả frame rate/frame count, không chỉ Duration + exit code.
+- Log “kiểm tra hoàn tất” trước đây chưa đúng: backend chỉ `copyFile` sang thư mục export, còn giải mã đầy đủ do QA ngoài thực hiện. Backend phải tự map cả video và audio sang null trước khi đánh dấu job `completed`.
+- Vì thư mục job và `C:\MatchCut\Exports` cùng ổ C, tạo hard-link sang tên UUID `.partial.mp4`, giải mã file partial, rồi atomic rename sang tên cuối. Cách này không sao chép lại 500–700 MB; nếu hard-link không khả dụng thì fallback `copyFile`.
+- Chỉ hiện file tên cuối sau khi kiểm tra đạt; `finally` phải xóa partial khi lỗi. API trả `publishMode` để quan sát `hardlink` hay `copy`. Job Kênh 2 25 giây thật xác nhận `publishMode=hardlink`, hoàn tất trong 13,533 giây gồm cả kiểm tra backend và không để lại partial.
