@@ -336,3 +336,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - `fast-chunk-*` chỉ tồn tại để concat ngay sau render; chạy `-movflags +faststart` trên từng chunk buộc FFmpeg dịch moov atom và tạo thêm I/O không ảnh hưởng chất lượng hay file cuối.
 - Chỉ bỏ cờ này khi tên output là chunk. File xuất cuối và các boundary cache vẫn giữ `+faststart` để có thể phát/stream bình thường.
 - 34/34 test và kiểm tra cú pháp đạt; cần lấy thêm mốc benchmark dài ở lượt sản xuất tiếp theo để định lượng riêng phần tiết kiệm I/O này.
+
+### 47. Chunk 28 cảnh chậm hơn chunk 24 trên job K2 dài
+
+- Thử tăng từ 24 lên 28 cảnh để giảm số graph FFmpeg: job 41:17,19 chạy 3 chunk/3 worker, hoàn tất trong 6:50,641.
+- Mốc đã xác nhận với 24 cảnh là 4 chunk/3 worker trong 6:40,434; chunk 28 chậm hơn khoảng 10,207 giây dù không CUDA fallback và vẫn qua `parallel-3` verification.
+- Giữ lại chunk size 24. Không suy ra rằng ít chunk hơn luôn nhanh hơn; graph dài hơn và thời gian worker cuối có thể lấn át phần startup tiết kiệm được.
