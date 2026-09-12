@@ -5,7 +5,7 @@ $stage = Join-Path ([IO.Path]::GetTempPath()) ("matchcut-portable-" + [guid]::Ne
 $zip = Join-Path $outputRoot "MatchCut-portable.zip"
 New-Item -ItemType Directory -Force -Path $stage, $outputRoot | Out-Null
 try {
-  $excluded = @(".git", ".cache-whisper", ".venv-whisper", "node_modules", "jobs", "test-exports", "test-exports-advanced", "test-exports-local", "qa-profile-assets", "data\runtime-jobs", "data\transcript-cache", "data\boundary-cache", "data\overlay-cache")
+  $excluded = @(".git", ".cache-whisper", ".venv-whisper", "node_modules", "jobs", "releases", "test-exports", "test-exports-advanced", "test-exports-local", "qa-profile-assets", "data\runtime-jobs", "data\transcript-cache", "data\boundary-cache", "data\overlay-cache")
   Get-ChildItem -LiteralPath $projectRoot -Force -Recurse | Where-Object {
     $relative = $_.FullName.Substring($projectRoot.Length).TrimStart('\')
     -not ($excluded | Where-Object { $relative -eq $_ -or $relative.StartsWith($_ + '\') })
