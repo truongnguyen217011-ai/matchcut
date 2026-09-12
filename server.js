@@ -2,7 +2,7 @@ import express from "express";
 import multer from "multer";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "node:child_process";
-import { openAsBlob } from "node:fs";
+import { createReadStream, openAsBlob } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -25,11 +25,13 @@ import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapW
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 import { fileMetadataMatches } from "./media-cache-utils.js";
+import { isValidCachedTranscript, transcriptCacheKey } from "./transcript-cache-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
   profileAssetsRoot = path.join(root, "data", "profile-assets"),
   mediaDurationCachePath = path.join(root, "data", "media-duration-cache.json"),
+  transcriptCacheRoot = path.join(root, "data", "transcript-cache"),
   projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
@@ -39,6 +41,7 @@ const root = path.dirname(fileURLToPath(import.meta.url)),
 await mkdir(jobsRoot, { recursive: true });
 await mkdir(persistentRoot, { recursive: true });
 await mkdir(profileAssetsRoot, { recursive: true });
+await mkdir(transcriptCacheRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
@@ -963,6 +966,34 @@ async function appendJobFile(form, field, record) {
   if (!record?.path) return;
   form.append(field, await openAsBlob(record.path), record.originalName || path.basename(record.path));
 }
+const whisperCacheSignature = `faster-whisper:${process.env.MATCHCUT_WHISPER_MODEL || "small"}:beam1:vad350:condition0:v1`;
+function hashFile(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash("sha256"), input = createReadStream(file);
+    input.on("data", (chunk) => hash.update(chunk));
+    input.on("error", reject);
+    input.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+async function transcriptCacheContext(file, language) {
+  const audioHash = await hashFile(file), key = transcriptCacheKey(audioHash, language, whisperCacheSignature);
+  return { key, file:path.join(transcriptCacheRoot, `${key}.json`) };
+}
+async function readCachedTranscript(context) {
+  try {
+    const saved = JSON.parse(await readFile(context.file, "utf8"));
+    return saved?.version === 1 && saved?.key === context.key && isValidCachedTranscript(saved.transcript) ? saved.transcript : null;
+  } catch { return null; }
+}
+async function writeCachedTranscript(context, transcript) {
+  if (transcript?.engine !== "faster-whisper" || !isValidCachedTranscript(transcript)) return;
+  const temporary = `${context.file}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ version:1, key:context.key, transcript }, null, 2), "utf8");
+    try { await rename(temporary, context.file); }
+    catch { await rm(context.file, { force:true }); await rename(temporary, context.file); }
+  } finally { await rm(temporary, { force:true }); }
+}
 async function localPost(endpoint, form) {
   const response = await fetch(`http://127.0.0.1:${port}${endpoint}`, { method: "POST", body: form });
   const result = await response.json();
@@ -986,11 +1017,21 @@ async function processPersistentJob(job) {
     }
     if (!job.transcript?.chunks?.length) {
       job.status = "transcribing"; job.stage = "Tạo timestamp"; job.progress = 10;
-      addJobLog(job, "Bắt đầu tạo timestamp bằng Faster-Whisper."); await savePersistentJob(job);
-      const form = new FormData();
-      await appendJobFile(form, "voice", job.files.voice); form.append("language", job.settings.language || "auto");
-      job.transcript = await localPost("/api/transcribe", form); job.transcript.source = "whisper";
-      job.progress = 55; addJobLog(job, `Đã lưu ${job.transcript.chunks.length} timestamp; checkpoint này sẽ được dùng lại.`); await savePersistentJob(job);
+      const requestedLanguage = job.settings.language || "auto", cacheContext = await transcriptCacheContext(job.files.voice.path, requestedLanguage);
+      job.transcript = await readCachedTranscript(cacheContext);
+      if (job.transcript) {
+        job.transcript = structuredClone(job.transcript); job.transcript.source = "whisper-cache";
+        addJobLog(job, `Dùng cache Faster-Whisper ${job.transcript.chunks.length} timestamp; bỏ qua nhận dạng lại.`);
+      } else {
+        addJobLog(job, "Bắt đầu tạo timestamp bằng Faster-Whisper."); await savePersistentJob(job);
+        const form = new FormData();
+        await appendJobFile(form, "voice", job.files.voice); form.append("language", requestedLanguage);
+        job.transcript = await localPost("/api/transcribe", form); job.transcript.source = "whisper";
+        try { await writeCachedTranscript(cacheContext, job.transcript); }
+        catch (error) { console.warn(`Không lưu được cache Faster-Whisper: ${error instanceof Error ? error.message : error}`); }
+        addJobLog(job, `Đã lưu ${job.transcript.chunks.length} timestamp; checkpoint này sẽ được dùng lại.`);
+      }
+      job.progress = 55; await savePersistentJob(job);
     } else addJobLog(job, `Dùng lại checkpoint ${job.transcript.chunks.length} timestamp đã lưu.`);
 
     job.status = "rendering"; job.stage = "Render MP4"; job.progress = 60; job.settings.fastRender = job.settings.fastRender !== false; await savePersistentJob(job);

@@ -280,3 +280,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Không lưu đường dẫn trong `jobs` hoặc `data/runtime-jobs` vì đó là file tạm/job riêng. File cache là runtime state, không đưa vào Git.
 - Ghi cache bằng file tạm UUID rồi atomic rename và tuần tự hóa các lượt ghi; không dùng chung một tên `.tmp` giữa các worker.
 - Kiểm thử cùng 6 nguồn thật sau restart giảm từ 4,677 giây cold xuống 2,427 giây warm (tiết kiệm 2,250 giây); request 24 nguồn đã cache hoàn tất trong 6,575 giây. Các MP4 kiểm thử đều giải mã video/audio với exit code 0.
+
+### 39. Job trùng voice không được chạy Faster-Whisper lại
+
+- Checkpoint trong `job.json` chỉ giúp chính job đó tiếp tục; hai job khác nhau dùng cùng nội dung voice trước đây vẫn nhận dạng lại từ đầu.
+- Khóa cache transcript phải gồm SHA-256 nội dung voice, ngôn ngữ yêu cầu và chữ ký model/tham số Whisper. Không dùng tên file vì cùng tên có thể chứa âm thanh khác, và đổi ngôn ngữ/model phải tạo kết quả mới.
+- SRT cùng tên vẫn có ưu tiên cao hơn cache. Chỉ lưu kết quả `faster-whisper` có cue hợp lệ; không cache fallback JavaScript để lần sau còn cơ hội dùng engine tốt hơn.
+- File cache ghi bằng tên tạm UUID và atomic rename, lỗi đọc/ghi cache không được làm hỏng job. Thư mục `data/transcript-cache` là runtime state và không đưa vào Git.
+- Kiểm thử hai job đầy đủ dùng cùng voice 25 giây: job đầu tạo 5 timestamp trong 2,84 giây; job sau ghi rõ cache-hit và chuyển thẳng sang render trong dưới 3 giây. MP4 cache-hit giải mã toàn bộ video/audio với exit code 0.

@@ -8,6 +8,7 @@ data/runtime-jobs/
 data/profile-assets/
 data/project-state.json
 data/media-duration-cache.json
+data/transcript-cache/
 qa-profile-assets/
 jobs/
 test-exports/
