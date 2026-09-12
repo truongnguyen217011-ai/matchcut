@@ -349,3 +349,8 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Benchmark cùng voice K2 41:17,19, 84 cảnh, 503 cue và cùng 4 chunk/3 worker: `p1` hoàn tất trong 6:30,390, so với `p2` 6:40,434, tiết kiệm 10,044 giây (~2,5%).
 - `p1` vẫn trả `h264_nvenc`, `nvdec-scale_cuda-nvenc`, `publishMode=hardlink`, `verificationMode=parallel-3`; không CUDA fallback và file vượt cổng 30 fps/decode.
 - Mẫu 25 giây cũng qua với `p1`; giữ biến môi trường để quay lại `p2` nếu QA hình ảnh thực tế phát hiện khác biệt.
+
+### 49. Chưa staging toàn bộ footage ổ mạng về SSD
+
+- Thư mục K2 benchmark có 297 file, tổng khoảng 13,52 GB, file lớn nhất 203,9 MB. Copy toàn bộ trước mỗi job sẽ tạo chi phí I/O lớn hơn lợi ích chưa đo được.
+- Staging chọn lọc 84 file được chọn có thể là hướng tương lai, nhưng cần cache theo SHA-256 và dọn dẹp có giới hạn dung lượng; không triển khai vội vì sẽ thay đổi luồng job và có nguy cơ chậm hơn render trực tiếp.
