@@ -265,3 +265,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Worker phải giữ thứ tự segment theo timeline dù khối hoàn tất không theo thứ tự. Khi một khối lỗi, ngừng nhận khối mới nhưng chờ mọi FFmpeg đang chạy kết thúc rồi mới dọn thư mục tạm.
 - Chỉ bật song song khi CUDA pipeline khả dụng và Fast Render đang bật; pipeline CPU hoặc chế độ chất lượng đầy đủ vẫn chạy tuần tự để tránh quá tải.
 - Lượt xác nhận dùng khoảng 6,64/12 GB VRAM, không fallback CPU, xuất `chunked-single-pass-4-parallel-2` và giải mã toàn bộ MP4 không có lỗi DTS.
+
+### 37. Không cân khối chỉ theo thời lượng; Intro và Outro có thể chuẩn hóa đồng thời
+
+- Chia lại 84 cảnh thành bốn khối gần 10 phút đã làm benchmark sản xuất tăng từ 15:14,728 lên 17:43,073. Chi phí còn phụ thuộc codec, độ phân giải, hiệu ứng và khả năng tái sử dụng cùng nguồn trong một khối, nên số phút không phải đại diện đủ cho tải render.
+- Giữ ranh giới cố định tối đa 24 cảnh đã được chứng minh; chỉ đổi cách chia khi có mô hình chi phí nguồn và benchmark cùng một lựa chọn tư liệu để so sánh công bằng.
+- Intro và Outro là hai encode ngắn độc lập, có thể chuẩn hóa song song bằng worker có giới hạn rồi đặt lại đúng thứ tự trước/content/sau.
+- Với tài sản thật Kênh 2, chuẩn hóa song song giảm từ 1,732 giây xuống 1,403 giây; cả hai MP4 thử giải mã video/audio với exit code 0.

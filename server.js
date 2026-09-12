@@ -210,18 +210,21 @@ async function attachIntroOutro({ dir, content, files, width, height, fast, onPr
   const contentSegments = (Array.isArray(content) ? content : [{ file:content }]).filter((segment) => segment?.file);
   if (!intro && !outro && contentSegments.length === 1) return contentSegments[0].file;
   await onProgress?.("Ghép Intro và Outro", 96);
+  // Intro and outro are independent, short encodes. Normalize both together
+  // while the long content chunks stay untouched, then restore timeline order.
+  const boundaryConcurrency = await hasNvenc() ? 2 : 1;
+  const boundaryPlans = [
+    intro && { source:intro.path, output:path.join(dir, "normalized-intro.mp4") },
+    outro && { source:outro.path, output:path.join(dir, "normalized-outro.mp4") },
+  ].filter(Boolean);
+  const boundaries = await mapWithConcurrency(boundaryPlans, boundaryConcurrency, async ({ source, output }) => {
+    await normalizeBoundaryVideo(source, output, width, height, fast);
+    return { file:output, duration:await cachedMediaDuration(output) };
+  });
   const segments = [];
-  if (intro) {
-    const normalizedIntro = path.join(dir, "normalized-intro.mp4");
-    await normalizeBoundaryVideo(intro.path, normalizedIntro, width, height, fast);
-    segments.push({ file:normalizedIntro, duration:await cachedMediaDuration(normalizedIntro) });
-  }
+  if (intro) segments.push(boundaries.shift());
   for (const segment of contentSegments) segments.push({ file:segment.file, duration:segment.duration || await cachedMediaDuration(segment.file) });
-  if (outro) {
-    const normalizedOutro = path.join(dir, "normalized-outro.mp4");
-    await normalizeBoundaryVideo(outro.path, normalizedOutro, width, height, fast);
-    segments.push({ file:normalizedOutro, duration:await cachedMediaDuration(normalizedOutro) });
-  }
+  if (outro) segments.push(boundaries.shift());
   const list = path.join(dir, "intro-content-outro.txt"), output = path.join(dir, "matchcut-with-intro-outro.mp4");
   await writeFile(list, buildConcatManifest(segments), "utf8");
   // MP4/AAC priming can overlap audio DTS at file boundaries. Keep the long
