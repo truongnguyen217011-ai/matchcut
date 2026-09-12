@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+if exist "update-portable.ps1" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0update-portable.ps1"
 where node >nul 2>nul
 if errorlevel 1 (
   echo Node.js chua duoc cai. Vui long cai Node.js 20+ tu https://nodejs.org/
