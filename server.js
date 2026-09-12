@@ -629,8 +629,11 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   const graphPath = path.join(dir, `${artifactStem}-single-pass.ffgraph`);
   await writeFile(graphPath, filters.join(";\n"), "utf8");
   const output = path.join(dir, outputName);
+  // Intermediate chunks are concatenated immediately; relocating the moov
+  // atom for each one adds I/O without improving the final export.
+  const faststartArgs = outputName.startsWith("fast-chunk-") ? [] : ["-movflags", "+faststart"];
   try {
-    const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-t", totalDuration.toFixed(3), "-frames:v", String(Math.max(1, Math.ceil(totalDuration * 30))), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", "-movflags", "+faststart"], output, { fast: settings.fastRender !== false, strictGpu: gpuMode });
+    const encoder = await runVideoEncode([...inputArgs, "-filter_complex_script", graphPath, "-map", "[vout]", "-map", "[aout]", "-t", totalDuration.toFixed(3), "-frames:v", String(Math.max(1, Math.ceil(totalDuration * 30))), "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-shortest", ...faststartArgs], output, { fast: settings.fastRender !== false, strictGpu: gpuMode });
     return { output, encoder, acceleration: gpuMode ? "nvdec-scale_cuda-nvenc" : "cpu-filters-nvenc" };
   } catch (error) {
     if (!gpuMode || !isCudaPipelineError(error)) throw error;

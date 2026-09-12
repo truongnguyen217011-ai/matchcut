@@ -330,3 +330,9 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Chuẩn bị overlay một lần bằng Sharp: resize đúng `fit=fill` như filter cũ, giữ mọi pixel có alpha khác 0, cắt bounding box rồi đặt lại đúng tọa độ x/y. Không được dùng ngưỡng alpha lớn hơn 0 vì có thể làm mất pixel bán trong suốt ở rìa.
 - Cache bền vững dùng SHA-256 nội dung nguồn và kích thước output; metadata lưu x/y/width/height. Khi đọc lại phải kiểm tra khóa, số nguyên hợp lệ, file không rỗng và kích thước PNG đúng metadata. Nếu Sharp hoặc cache lỗi, tự dùng ảnh gốc và filter scale cũ.
 - Benchmark sản xuất Kênh 2 dài 41:17,19, 84 cảnh và 503 cue hoàn tất trong 6:40,434 từ trước upload đến sau kiểm tra toàn bộ, so với mốc 13:24,971 trước tối ưu (nhanh hơn khoảng 50,2%). File cuối vẫn là H.264 Main 1920x1080 30 fps và AAC-LC 48 kHz stereo; backend xác nhận `chunked-single-pass-4-parallel-3`, `publishMode=hardlink`, `verificationMode=parallel-3`.
+
+### 46. Không chạy faststart trên các chunk trung gian
+
+- `fast-chunk-*` chỉ tồn tại để concat ngay sau render; chạy `-movflags +faststart` trên từng chunk buộc FFmpeg dịch moov atom và tạo thêm I/O không ảnh hưởng chất lượng hay file cuối.
+- Chỉ bỏ cờ này khi tên output là chunk. File xuất cuối và các boundary cache vẫn giữ `+faststart` để có thể phát/stream bình thường.
+- 34/34 test và kiểm tra cú pháp đạt; cần lấy thêm mốc benchmark dài ở lượt sản xuất tiếp theo để định lượng riêng phần tiết kiệm I/O này.
