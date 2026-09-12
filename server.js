@@ -232,7 +232,8 @@ async function runVideoEncode(baseArgs, output, options = {}) {
   if (await hasNvenc()) {
     try {
       const preset = options.fast ? (process.env.MATCHCUT_NVENC_PRESET || "p1") : "p4";
-      await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", preset, "-tune", "hq", "-rc", "vbr", "-cq", "23", "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
+      const cq = options.fast ? (process.env.MATCHCUT_NVENC_CQ || "23") : "23";
+      await run([...baseArgs, "-c:v", "h264_nvenc", "-preset", preset, "-tune", "hq", "-rc", "vbr", "-cq", cq, "-b:v", "4M", "-maxrate", "8M", "-bufsize", "16M", output]);
       return "h264_nvenc";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

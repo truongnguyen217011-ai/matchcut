@@ -354,3 +354,8 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 - Thư mục K2 benchmark có 297 file, tổng khoảng 13,52 GB, file lớn nhất 203,9 MB. Copy toàn bộ trước mỗi job sẽ tạo chi phí I/O lớn hơn lợi ích chưa đo được.
 - Staging chọn lọc 84 file được chọn có thể là hướng tương lai, nhưng cần cache theo SHA-256 và dọn dẹp có giới hạn dung lượng; không triển khai vội vì sẽ thay đổi luồng job và có nguy cơ chậm hơn render trực tiếp.
+
+### 50. CQ NVENC cần A/B cùng footage trước khi đổi mặc định
+
+- Fast Render hỗ trợ `MATCHCUT_NVENC_CQ`, mặc định vẫn là CQ 23; CQ 25 chỉ dùng thử khi đặt biến môi trường.
+- Mẫu 25 giây CQ 25 vẫn đạt H.264 30 fps và decode exit 0, nhưng footage được chọn ngẫu nhiên nên kích thước 28,66 MB không thể so trực tiếp với mẫu CQ 23 21,96 MB. Chưa đổi mặc định khi chưa có benchmark cùng input và QA chất lượng hình ảnh.
