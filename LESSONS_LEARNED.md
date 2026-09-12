@@ -295,3 +295,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Khóa cache phải gồm độ phân giải, chế độ nhanh, encoder và toàn bộ định dạng đích quan trọng (30 fps, yuv420p, AAC 192 kbps/48 kHz/stereo). Thay nguồn hoặc cấu hình phải sinh mục mới.
 - File mới được encode sang tên tạm UUID, giải mã kiểm tra đầy đủ rồi mới atomic rename. Sau mỗi lần backend khởi động, mục cache phải được giải mã kiểm tra một lần; mục rỗng/hỏng bị xóa riêng và tự tạo lại. Nếu thư mục cache lỗi, job fallback về file chuẩn hóa trong thư mục job.
 - Kiểm thử thật Kênh 2 sau khi restart xác nhận hai mục cache vẫn dùng được. Hai job 25 giây cold/warm hoàn tất lần lượt khoảng 64,4 và 12,9 giây (tổng thời gian còn chịu ảnh hưởng lựa chọn footage ngẫu nhiên, nên không coi toàn bộ chênh lệch là lợi ích riêng của cache). Cả hai MP4 đầu ra giải mã đủ video/audio với exit code 0.
+
+### 41. RTX 3060 12 GB chạy ổn định tối đa ba khối sản xuất đồng thời
+
+- Với job phổ biến gồm bốn khối, hai worker tạo hai làn render; ba worker cho ba khối dài chạy trong lượt đầu và nhận khối cuối ngay khi một worker trống, không thay đổi ranh giới 24 cảnh hoặc chất lượng encoder.
+- Benchmark Kênh 2 đầy đủ 41:17,19, 84 cảnh hình, 503 cue, intro/outro/overlay và mọi hiệu ứng hoàn tất trong 13:24,971 tính từ trước upload. Faster-Whisper cold mất khoảng 50 giây; riêng render, ghép và kiểm tra mất 12:34,607. Mốc sản xuất hai worker đã xác nhận trước đó là 15:14,728.
+- Khi ba worker cùng chạy, VRAM quan sát được là 9.214/12.288 MB, encoder 33%, decoder 49%, GPU 51°C; không có CUDA fallback hoặc CPU fallback. Chỉ còn khoảng 3 GB khoảng trống, vì vậy không tăng lên bốn worker trên máy này.
+- File cuối 715.320.482 byte giữ H.264 Main 1080p30 yuv420p và AAC-LC 48 kHz stereo 192 kbps; giải mã toàn bộ 41:17,19 trong 41,137 giây với exit code 0.

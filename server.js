@@ -551,12 +551,15 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
 async function renderChunkedSinglePass(options) {
   const { scenes, captionScenes = scenes, onProgress } = options, chunkSize = 24, chunkCount = Math.ceil(scenes.length / chunkSize);
   const gpuMode = options.gpuMode ?? await hasCudaPipeline();
-  const concurrency = gpuMode && options.settings.fastRender !== false ? 2 : 1;
+  // RTX 3060 has enough headroom for three isolated 24-scene graphs. A fourth
+  // adds memory pressure, while three lets the common four-chunk job finish
+  // its first three long chunks in one wave.
+  const concurrency = gpuMode && options.settings.fastRender !== false ? 3 : 1;
   const plans = Array.from({ length: chunkCount }, (_, chunkIndex) => ({ chunkIndex, group: scenes.slice(chunkIndex * chunkSize, (chunkIndex + 1) * chunkSize) }));
   let finished = 0;
   const outputs = await mapWithConcurrency(plans, concurrency, async ({ chunkIndex, group }) => {
     const chunkNumber = chunkIndex + 1;
-    await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}${concurrency > 1 ? " (song song 2 khối)" : ""}`, 60 + Math.floor((finished / chunkCount) * 30));
+    await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}${concurrency > 1 ? ` (song song ${concurrency} khối)` : ""}`, 60 + Math.floor((finished / chunkCount) * 30));
     const offset = Number(group[0].start) || 0, end = Number(group.at(-1).end), duration = end - offset;
     const localScenes = group.map((scene) => ({ ...scene, start: Number(scene.start) - offset, end: Number(scene.end) - offset }));
     const localCaptions = captionScenes
