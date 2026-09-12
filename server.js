@@ -19,6 +19,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
+import sharp from "sharp";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
@@ -28,6 +29,7 @@ import { buildWaveformSourceFilters } from "./waveform-utils.js";
 import { fileMetadataMatches } from "./media-cache-utils.js";
 import { isValidCachedTranscript, transcriptCacheKey } from "./transcript-cache-utils.js";
 import { boundaryCacheKey } from "./boundary-cache-utils.js";
+import { findAlphaBounds, overlayCacheKey } from "./overlay-cache-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -35,6 +37,7 @@ const root = path.dirname(fileURLToPath(import.meta.url)),
   mediaDurationCachePath = path.join(root, "data", "media-duration-cache.json"),
   transcriptCacheRoot = path.join(root, "data", "transcript-cache"),
   boundaryCacheRoot = path.join(root, "data", "boundary-cache"),
+  overlayCacheRoot = path.join(root, "data", "overlay-cache"),
   projectStatePath = path.join(root, "data", "project-state.json"),
   fontsRoot = path.join(root, "dist", "fonts"),
   fasterWhisperPython = path.join(root, ".venv-whisper", "Scripts", "python.exe"),
@@ -46,6 +49,7 @@ await mkdir(persistentRoot, { recursive: true });
 await mkdir(profileAssetsRoot, { recursive: true });
 await mkdir(transcriptCacheRoot, { recursive: true });
 await mkdir(boundaryCacheRoot, { recursive: true });
+await mkdir(overlayCacheRoot, { recursive: true });
 await mkdir(exportRoot, { recursive: true });
 const app = express(),
   upload = multer({
@@ -443,6 +447,44 @@ async function findOverlayImages(folder) {
   }
   return results;
 }
+const overlayPreparationCache = new Map();
+async function prepareOverlayImage(source, width, height) {
+  let memoryKey;
+  try {
+    const info = await stat(source);
+    memoryKey = `${path.resolve(source)}:${info.size}:${info.mtimeMs}:${width}x${height}`;
+    if (!overlayPreparationCache.has(memoryKey)) overlayPreparationCache.set(memoryKey, (async () => {
+      const key = overlayCacheKey(await hashFile(source), width, height);
+      const cachedImage = path.join(overlayCacheRoot, `${key}.png`), cachedMeta = path.join(overlayCacheRoot, `${key}.json`);
+      try {
+        const meta = JSON.parse(await readFile(cachedMeta, "utf8")), cachedInfo = await stat(cachedImage), imageInfo = await sharp(cachedImage).metadata();
+        const validBounds = [meta?.x, meta?.y, meta?.width, meta?.height].every(Number.isInteger) && meta.x >= 0 && meta.y >= 0 && meta.width > 0 && meta.height > 0;
+        if (meta?.version === 1 && meta.key === key && validBounds && cachedInfo.size > 0 && imageInfo.width === meta.width && imageInfo.height === meta.height) return { file:cachedImage, x:meta.x, y:meta.y, preScaled:true };
+      } catch {}
+      const { data, info:rawInfo } = await sharp(source).resize(width, height, { fit:"fill" }).ensureAlpha().raw().toBuffer({ resolveWithObject:true });
+      const bounds = findAlphaBounds(data, rawInfo.width, rawInfo.height, rawInfo.channels);
+      const cropped = await sharp(data, { raw:rawInfo }).extract(bounds).png().toBuffer();
+      const temporaryImage = `${cachedImage}.${crypto.randomUUID()}.tmp`, temporaryMeta = `${cachedMeta}.${crypto.randomUUID()}.tmp`;
+      try {
+        await writeFile(temporaryImage, cropped);
+        await rm(cachedImage, { force:true });
+        await rename(temporaryImage, cachedImage);
+        await writeFile(temporaryMeta, JSON.stringify({ version:1, key, x:bounds.left, y:bounds.top, width:bounds.width, height:bounds.height }), "utf8");
+        await rm(cachedMeta, { force:true });
+        await rename(temporaryMeta, cachedMeta);
+      } finally {
+        await rm(temporaryImage, { force:true });
+        await rm(temporaryMeta, { force:true });
+      }
+      return { file:cachedImage, x:bounds.left, y:bounds.top, preScaled:true };
+    })());
+    return await overlayPreparationCache.get(memoryKey);
+  } catch (error) {
+    if (memoryKey) overlayPreparationCache.delete(memoryKey);
+    console.warn(`Không chuẩn bị được overlay crop, dùng ảnh gốc: ${error instanceof Error ? error.message : error}`);
+    return { file:source, x:0, y:0, preScaled:false };
+  }
+}
 function sceneVideoFilter(scene, settings, width, height, duration, transition, gpuMode = false, preScaled = false) {
   const scaler = gpuMode && scene.mediaType !== "image"
     ? `scale_cuda=${width}:${height}:force_original_aspect_ratio=decrease:force_divisible_by=2:interp_algo=lanczos,hwdownload,format=nv12,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
@@ -466,7 +508,7 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   if (transition === "flash") vf += `,fade=t=in:st=0:d=${Math.min(0.18, duration / 4).toFixed(2)}:color=white`;
   return `${vf},setsar=1,format=yuv420p`;
 }
-async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset = 0, outputName = "matchcut-output.mp4", gpuMode }) {
+async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, overlayImageX = 0, overlayImageY = 0, overlayImagePreScaled = false, timeOffset = 0, outputName = "matchcut-output.mp4", gpuMode }) {
   if (gpuMode === undefined) gpuMode = await hasCudaPipeline();
   if (scenes.length > 120) throw new Error(`Timeline ${scenes.length} cảnh vượt ngưỡng single-pass an toàn 120 cảnh.`);
   const randomTransitions = settings.fastRender !== false ? ["none", "fade", "zoom-in", "zoom-out", "flash"] : ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
@@ -551,8 +593,9 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   let current = "timeline", layer = 0;
   if (overlayIndex !== null) {
     const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
-    filters.push(`[${overlayIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
-    filters.push(`[${current}][overlayimg]overlay=0:0:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
+    const scale = overlayImagePreScaled ? "" : `scale=${width}:${height},`;
+    filters.push(`[${overlayIndex}:v]${scale}format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
+    filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
   const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
@@ -593,7 +636,7 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     if (!gpuMode || !isCudaPipelineError(error)) throw error;
     console.warn(`CUDA pipeline fallback: ${error instanceof Error ? error.message : error}`);
     await rm(output, { force: true });
-    return renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, timeOffset, outputName, gpuMode: false });
+    return renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, overlayImageX, overlayImageY, overlayImagePreScaled, timeOffset, outputName, gpuMode: false });
   }
 }
 async function renderChunkedSinglePass(options) {
@@ -701,13 +744,18 @@ app.post(
       }
       const segments = [];
       const [width, height] = settings.aspectRatio === "9:16" ? [1080, 1920] : settings.aspectRatio === "1:1" ? [1080, 1080] : [1920, 1080];
-      let overlayImagePath = null, renderEncoder = "copy";
+      let overlayImagePath = null, overlayImageOriginalPath = null, overlayImageX = 0, overlayImageY = 0, overlayImagePreScaled = false, renderEncoder = "copy";
       if (settings.overlayImageEnabled && settings.overlayImageFolder) {
         const overlayFiles = await findOverlayImages(settings.overlayImageFolder);
         if (!overlayFiles.length) throw new Error("Folder ảnh lớp phủ không có file PNG hoặc WebP.");
         const folderKey = path.resolve(settings.overlayImageFolder), previous = lastOverlaySelections.get(folderKey), choices = overlayFiles.length > 1 ? overlayFiles.filter((file) => file !== previous) : overlayFiles;
-        overlayImagePath = choices[Math.floor(Math.random() * choices.length)];
-        lastOverlaySelections.set(folderKey, overlayImagePath);
+        overlayImageOriginalPath = choices[Math.floor(Math.random() * choices.length)];
+        lastOverlaySelections.set(folderKey, overlayImageOriginalPath);
+        const preparedOverlay = await prepareOverlayImage(overlayImageOriginalPath, width, height);
+        overlayImagePath = preparedOverlay.file;
+        overlayImageX = preparedOverlay.x;
+        overlayImageY = preparedOverlay.y;
+        overlayImagePreScaled = preparedOverlay.preScaled;
       }
       if (settings.singlePassRender !== false) {
         try {
@@ -716,7 +764,7 @@ app.post(
             progressJob.stage = stage; progressJob.progress = progress; progressJob.updatedAt = new Date().toISOString();
             await savePersistentJob(progressJob);
           } : null;
-          const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, onProgress };
+          const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, overlayImageX, overlayImageY, overlayImagePreScaled, onProgress };
           const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
           singlePass.output = await attachIntroOutro({ dir, content: singlePass.segments || singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
           const savedPath = await availableExportPath(voice.originalname);
@@ -726,7 +774,7 @@ app.post(
             ok: true,
             savedPath,
             fileName: path.basename(savedPath),
-            overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
+            overlayImage: overlayImageOriginalPath ? path.basename(overlayImageOriginalPath) : null,
             renderEncoder: singlePass.encoder,
             acceleration: singlePass.acceleration,
             renderPipeline: singlePass.pipeline || "single-pass",
@@ -878,8 +926,9 @@ app.post(
         const filters = ["[0:v]null[vbase]"]; let current = "vbase", layerNumber = 0;
         if (overlayInputIndex !== null) {
           const opacity = Math.min(100, Math.max(5, Number(settings.overlayImageOpacity ?? 70))) / 100;
-          filters.push(`[${overlayInputIndex}:v]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
-          filters.push(`[${current}][overlayimg]overlay=0:0:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
+          const scale = overlayImagePreScaled ? "" : `scale=${width}:${height},`;
+          filters.push(`[${overlayInputIndex}:v]${scale}format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
+          filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
         const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
           waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
@@ -918,7 +967,7 @@ app.post(
         ok: true,
         savedPath,
         fileName: path.basename(savedPath),
-        overlayImage: overlayImagePath ? path.basename(overlayImagePath) : null,
+        overlayImage: overlayImageOriginalPath ? path.basename(overlayImageOriginalPath) : null,
         renderEncoder,
         renderPipeline: "legacy-two-pass-fallback",
         publishMode,

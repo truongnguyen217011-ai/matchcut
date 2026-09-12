@@ -323,3 +323,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Duration đúng và decode exit 0 chưa chứng minh đủ frame. Bản lỗi overlay từng chỉ có 6,43 fps nhưng vẫn qua hai điều kiện đó; backend phải parse FPS trung bình từ chính output probe và chặn ngoài khoảng 29,5–30,5 fps.
 - Dùng chung lần probe đã cần cho việc chia đoạn nên cổng FPS không tạo thêm tiến trình FFmpeg. Parser phải hỗ trợ số thập phân như 29,94 fps và báo lỗi khi thiếu Duration hoặc dòng video.
 - Job Kênh 2 25 giây thật vượt cổng FPS mới, trả `publishMode=hardlink`, `verificationMode=single` và hoàn tất trong 12,275 giây. Unit test bắt buộc xác nhận 29,94 fps được nhận và 6,43 fps bị từ chối.
+
+### 45. Cắt viền alpha của overlay giảm mạnh chi phí hòa trộn mà không bỏ frame
+
+- Overlay K2 nguồn 3840x2160 sau khi resize 1920x1080 chỉ có khoảng 27-30% canvas chứa pixel alpha khác 0. FFmpeg trước đây vẫn scale và hòa trộn toàn bộ 2.073.600 pixel ở mọi frame; bản crop 120 giây đủ 3.600 frame giảm riêng thời gian filter từ 4,063 xuống 1,130 giây (72%).
+- Chuẩn bị overlay một lần bằng Sharp: resize đúng `fit=fill` như filter cũ, giữ mọi pixel có alpha khác 0, cắt bounding box rồi đặt lại đúng tọa độ x/y. Không được dùng ngưỡng alpha lớn hơn 0 vì có thể làm mất pixel bán trong suốt ở rìa.
+- Cache bền vững dùng SHA-256 nội dung nguồn và kích thước output; metadata lưu x/y/width/height. Khi đọc lại phải kiểm tra khóa, số nguyên hợp lệ, file không rỗng và kích thước PNG đúng metadata. Nếu Sharp hoặc cache lỗi, tự dùng ảnh gốc và filter scale cũ.
+- Benchmark sản xuất Kênh 2 dài 41:17,19, 84 cảnh và 503 cue hoàn tất trong 6:40,434 từ trước upload đến sau kiểm tra toàn bộ, so với mốc 13:24,971 trước tối ưu (nhanh hơn khoảng 50,2%). File cuối vẫn là H.264 Main 1920x1080 30 fps và AAC-LC 48 kHz stereo; backend xác nhận `chunked-single-pass-4-parallel-3`, `publishMode=hardlink`, `verificationMode=parallel-3`.
