@@ -309,3 +309,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Log “kiểm tra hoàn tất” trước đây chưa đúng: backend chỉ `copyFile` sang thư mục export, còn giải mã đầy đủ do QA ngoài thực hiện. Backend phải tự map cả video và audio sang null trước khi đánh dấu job `completed`.
 - Vì thư mục job và `C:\MatchCut\Exports` cùng ổ C, tạo hard-link sang tên UUID `.partial.mp4`, giải mã file partial, rồi atomic rename sang tên cuối. Cách này không sao chép lại 500–700 MB; nếu hard-link không khả dụng thì fallback `copyFile`.
 - Chỉ hiện file tên cuối sau khi kiểm tra đạt; `finally` phải xóa partial khi lỗi. API trả `publishMode` để quan sát `hardlink` hay `copy`. Job Kênh 2 25 giây thật xác nhận `publishMode=hardlink`, hoàn tất trong 13,533 giây gồm cả kiểm tra backend và không để lại partial.
+
+### 43. Giải mã kiểm tra video dài có thể chia ba đoạn liên tục
+
+- Một decoder CPU kiểm tra MP4 sản xuất 41:17,19 mất 41,137 giây. Ba decoder chạy đồng thời trên ba khoảng liên tục mất 31,705 giây, cả ba exit 0; tiết kiệm 9,432 giây (22,9%) mà vẫn giải mã video và audio.
+- Hai đoạn đầu phải kết thúc đúng tại điểm bắt đầu đoạn kế tiếp. Đoạn cuối không đặt `-t` mà chạy tới EOF vật lý để sai số Duration không bỏ lọt phần đuôi. Dùng `-xerror` để lỗi giải mã làm FFmpeg trả mã lỗi thay vì chỉ in cảnh báo.
+- Chỉ chia đoạn khi file dài từ 180 giây; file ngắn dùng một decoder để tránh overhead. Nếu một decoder song song lỗi, kiểm tra lại toàn file bằng một decoder: lỗi tài nguyên tạm thời có thể qua, còn media hỏng phải tiếp tục bị chặn.
+- API trả `verificationMode` để quan sát. Job Kênh 2 25 giây thật xác nhận `verificationMode=single`, `publishMode=hardlink`, hiển thị giai đoạn 98% “Kiểm tra MP4 hoàn chỉnh” và hoàn tất trong 12,759 giây.

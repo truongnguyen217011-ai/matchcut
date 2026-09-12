@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAssTextEffect } from "../ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapWithConcurrency } from "../render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency } from "../render-utils.js";
 
 const settings = { textEffect: "typewriter", wordsPerCaption: 8, maxLines: 2, language: "en", subtitlePosition: "bottom" };
 
@@ -84,4 +84,14 @@ test("map chờ tác vụ đang chạy dừng trước khi trả lỗi", async (
     /chunk failed/,
   );
   assert.deepEqual(events, ["failed", "active"]);
+});
+
+test("kiểm tra video dài chia đoạn liên tục và để đoạn cuối chạy tới EOF", () => {
+  const segments = buildDecodeVerificationSegments(2477.19, 3);
+  assert.equal(segments.length, 3);
+  assert.equal(segments[0].start, 0);
+  assert.equal(segments[0].start + segments[0].duration, segments[1].start);
+  assert.equal(segments[1].start + segments[1].duration, segments[2].start);
+  assert.equal(segments[2].duration, null);
+  assert.equal(buildDecodeVerificationSegments(120, 3).length, 1);
 });

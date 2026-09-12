@@ -22,7 +22,7 @@ import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapWithConcurrency } from "./render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 import { fileMetadataMatches } from "./media-cache-utils.js";
@@ -337,7 +337,27 @@ async function availableExportPath(originalName) {
   }
 }
 async function verifyCompleteMedia(file) {
-  await run(["-v", "error", "-i", file, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "NUL"]);
+  const decode = ({ start = 0, duration = null }) => {
+    const args = ["-v", "error", "-xerror"];
+    if (start > 0) args.push("-ss", start.toFixed(6));
+    if (duration !== null) args.push("-t", duration.toFixed(6));
+    args.push("-i", file, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "NUL");
+    return run(args);
+  };
+  const segments = buildDecodeVerificationSegments(await probeMediaDuration(file), 3);
+  if (segments.length === 1) {
+    await decode(segments[0]);
+    return "single";
+  }
+  try {
+    await mapWithConcurrency(segments, segments.length, decode);
+    return `parallel-${segments.length}`;
+  } catch {
+    // A decoder process can fail from temporary host pressure. Rechecking the
+    // whole file distinguishes that from deterministic media corruption.
+    await decode({ start:0, duration:null });
+    return "single-fallback";
+  }
 }
 async function publishVerifiedOutput(source, destination) {
   const temporary = `${destination}.${crypto.randomUUID()}.partial.mp4`;
@@ -352,9 +372,9 @@ async function publishVerifiedOutput(source, destination) {
       mode = "copy";
       await copyFile(source, temporary);
     }
-    await verifyCompleteMedia(temporary);
+    const verificationMode = await verifyCompleteMedia(temporary);
     await rename(temporary, destination);
-    return mode;
+    return { publishMode:mode, verificationMode };
   } finally {
     await rm(temporary, { force:true });
   }
@@ -697,7 +717,7 @@ app.post(
           singlePass.output = await attachIntroOutro({ dir, content: singlePass.segments || singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
           const savedPath = await availableExportPath(voice.originalname);
           await onProgress?.("Kiểm tra MP4 hoàn chỉnh", 98);
-          const publishMode = await publishVerifiedOutput(singlePass.output, savedPath);
+          const { publishMode, verificationMode } = await publishVerifiedOutput(singlePass.output, savedPath);
           return sendRenderResult({
             ok: true,
             savedPath,
@@ -707,6 +727,7 @@ app.post(
             acceleration: singlePass.acceleration,
             renderPipeline: singlePass.pipeline || "single-pass",
             publishMode,
+            verificationMode,
             settings,
           });
         } catch (singlePassError) {
@@ -888,7 +909,7 @@ app.post(
       }
       const finalOutput = await attachIntroOutro({ dir, content: output, files: req.files, width, height, fast: settings.fastRender !== false });
       const savedPath = await availableExportPath(voice.originalname);
-      const publishMode = await publishVerifiedOutput(finalOutput, savedPath);
+      const { publishMode, verificationMode } = await publishVerifiedOutput(finalOutput, savedPath);
       sendRenderResult({
         ok: true,
         savedPath,
@@ -897,6 +918,7 @@ app.post(
         renderEncoder,
         renderPipeline: "legacy-two-pass-fallback",
         publishMode,
+        verificationMode,
         settings,
       });
     } catch (error) {

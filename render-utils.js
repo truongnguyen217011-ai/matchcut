@@ -51,3 +51,16 @@ export async function mapWithConcurrency(items, concurrency, mapper) {
   if (firstError) throw firstError;
   return results;
 }
+
+export function buildDecodeVerificationSegments(duration, concurrency = 3, threshold = 180) {
+  const total = Number(duration);
+  if (!Number.isFinite(total) || total <= 0) throw new Error("Thời lượng kiểm tra không hợp lệ.");
+  const count = total >= threshold ? Math.max(1, Math.floor(concurrency)) : 1;
+  const slice = total / count;
+  return Array.from({ length:count }, (_, index) => ({
+    start: index * slice,
+    // Let the final decoder run to physical EOF so rounding cannot leave an
+    // unchecked tail. Earlier ranges end exactly where the next one starts.
+    duration: index === count - 1 ? null : slice,
+  }));
+}
