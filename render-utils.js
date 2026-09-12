@@ -64,3 +64,20 @@ export function buildDecodeVerificationSegments(duration, concurrency = 3, thres
     duration: index === count - 1 ? null : slice,
   }));
 }
+
+export function parseMediaProbeDetails(details) {
+  const duration = String(details).match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  const frameRate = String(details).match(/Video:[^\r\n]*?([0-9]+(?:\.[0-9]+)?)\s+fps(?:,|\s)/i);
+  if (!duration || !frameRate) throw new Error("Không đọc được Duration/FPS của MP4.");
+  return {
+    duration: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
+    frameRate: Number(frameRate[1]),
+  };
+}
+
+export function assertExpectedFrameRate(frameRate, expected = 30, tolerance = 0.5) {
+  const actual = Number(frameRate);
+  if (!Number.isFinite(actual) || Math.abs(actual - expected) > tolerance) {
+    throw new Error(`MP4 sai tốc độ khung hình: ${frameRate} fps (yêu cầu ${expected} fps).`);
+  }
+}

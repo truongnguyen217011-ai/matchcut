@@ -22,7 +22,7 @@ import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency } from "./render-utils.js";
+import { assertExpectedFrameRate, buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency, parseMediaProbeDetails } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 import { fileMetadataMatches } from "./media-cache-utils.js";
@@ -115,19 +115,21 @@ function runCapture(command, args) {
     child.on("close", (code) => code === 0 ? resolve(output.trim()) : reject(new Error(error || `Folder picker exited ${code}`)));
   });
 }
-function probeMediaDuration(file) {
+function probeMediaOutput(file) {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, ["-hide_banner", "-i", file], { windowsHide: true });
     let details = "";
     child.stderr.on("data", (chunk) => (details += chunk.toString()));
     child.on("error", reject);
-    child.on("close", () => {
-      const match = details.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-      if (!match) return reject(new Error("Không đọc được thời lượng voice."));
-      resolve(Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]));
-    });
+    child.on("close", () => resolve(details));
   });
 }
+async function probeMediaDuration(file) {
+  const match = (await probeMediaOutput(file)).match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) throw new Error("Không đọc được thời lượng media.");
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+async function probeMediaDetails(file) { return parseMediaProbeDetails(await probeMediaOutput(file)); }
 let persistentMediaDurations = {};
 try {
   const saved = JSON.parse(await readFile(mediaDurationCachePath, "utf8"));
@@ -344,7 +346,9 @@ async function verifyCompleteMedia(file) {
     args.push("-i", file, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "NUL");
     return run(args);
   };
-  const segments = buildDecodeVerificationSegments(await probeMediaDuration(file), 3);
+  const details = await probeMediaDetails(file);
+  assertExpectedFrameRate(details.frameRate);
+  const segments = buildDecodeVerificationSegments(details.duration, 3);
   if (segments.length === 1) {
     await decode(segments[0]);
     return "single";

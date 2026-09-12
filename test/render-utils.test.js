@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAssTextEffect } from "../ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency } from "../render-utils.js";
+import { assertExpectedFrameRate, buildBoundaryConcatArgs, buildConcatManifest, buildDecodeVerificationSegments, compactVisualScenes, mapWithConcurrency, parseMediaProbeDetails } from "../render-utils.js";
 
 const settings = { textEffect: "typewriter", wordsPerCaption: 8, maxLines: 2, language: "en", subtitlePosition: "bottom" };
 
@@ -94,4 +94,14 @@ test("kiểm tra video dài chia đoạn liên tục và để đoạn cuối ch
   assert.equal(segments[1].start + segments[1].duration, segments[2].start);
   assert.equal(segments[2].duration, null);
   assert.equal(buildDecodeVerificationSegments(120, 3).length, 1);
+});
+
+test("probe media đọc đúng Duration và FPS kể cả frame rate thập phân", () => {
+  const valid = parseMediaProbeDetails("Duration: 00:41:17.19, start: 0.000000\nStream #0:0: Video: h264, yuv420p, 1920x1080, 1596 kb/s, 29.94 fps, 30 tbr");
+  assert.deepEqual(valid, { duration:2477.19, frameRate:29.94 });
+  const sparse = parseMediaProbeDetails("Duration: 00:41:17.19\nVideo: h264, yuv420p, 1920x1080, 6.43 fps, 30 tbr");
+  assert.equal(sparse.frameRate, 6.43);
+  assert.doesNotThrow(() => assertExpectedFrameRate(valid.frameRate));
+  assert.throws(() => assertExpectedFrameRate(sparse.frameRate), /6\.43 fps/);
+  assert.throws(() => parseMediaProbeDetails("Duration: 00:01:00.00"), /Duration\/FPS/);
 });

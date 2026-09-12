@@ -316,3 +316,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Hai đoạn đầu phải kết thúc đúng tại điểm bắt đầu đoạn kế tiếp. Đoạn cuối không đặt `-t` mà chạy tới EOF vật lý để sai số Duration không bỏ lọt phần đuôi. Dùng `-xerror` để lỗi giải mã làm FFmpeg trả mã lỗi thay vì chỉ in cảnh báo.
 - Chỉ chia đoạn khi file dài từ 180 giây; file ngắn dùng một decoder để tránh overhead. Nếu một decoder song song lỗi, kiểm tra lại toàn file bằng một decoder: lỗi tài nguyên tạm thời có thể qua, còn media hỏng phải tiếp tục bị chặn.
 - API trả `verificationMode` để quan sát. Job Kênh 2 25 giây thật xác nhận `verificationMode=single`, `publishMode=hardlink`, hiển thị giai đoạn 98% “Kiểm tra MP4 hoàn chỉnh” và hoàn tất trong 12,759 giây.
+
+### 44. Cổng hoàn tất phải kiểm tra FPS và ba decoder là điểm tối ưu
+
+- Cùng MP4 41:17,19, thời gian kiểm tra theo số decoder là: một 41,137 giây; hai 33,846 giây; ba 31,705 giây; bốn 37,874 giây. Bốn tiến trình tranh CPU/đĩa và chậm hơn, nên giữ ba thay vì tiếp tục tăng concurrency.
+- Duration đúng và decode exit 0 chưa chứng minh đủ frame. Bản lỗi overlay từng chỉ có 6,43 fps nhưng vẫn qua hai điều kiện đó; backend phải parse FPS trung bình từ chính output probe và chặn ngoài khoảng 29,5–30,5 fps.
+- Dùng chung lần probe đã cần cho việc chia đoạn nên cổng FPS không tạo thêm tiến trình FFmpeg. Parser phải hỗ trợ số thập phân như 29,94 fps và báo lỗi khi thiếu Duration hoặc dòng video.
+- Job Kênh 2 25 giây thật vượt cổng FPS mới, trả `publishMode=hardlink`, `verificationMode=single` và hoàn tất trong 12,275 giây. Unit test bắt buộc xác nhận 29,94 fps được nhận và 6,43 fps bị từ chối.
