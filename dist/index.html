@@ -7,6 +7,7 @@
   <meta name="description" content="Công cụ ghép ảnh và video khớp lời thuyết minh trên timeline." />
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./ffmpeg.css" />
+  <link rel="stylesheet" href="./draft-tools.css" />
 </head>
 <body>
   <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.8</span></div></div><div class="status"><i></i>NVDEC · CUDA Scale · Full Effects · NVENC</div></header>
@@ -19,7 +20,7 @@
   </section>
   <main>
     <section class="setup panel">
-      <div class="auto-pipeline-data"><label id="voiceDrop"><strong id="voiceLabel">Chưa chọn voice</strong></label><button id="whisperBtn" disabled></button><div id="whisperStatus"></div><audio id="audio"></audio><textarea id="script"></textarea></div>
+      <div class="auto-pipeline-data"><label id="voiceDrop"><strong id="voiceLabel">Chưa chọn voice</strong></label><button id="whisperBtn" disabled></button><div id="whisperStatus"></div><audio id="audio"></audio><label class="dialogue-label" for="script">Lời thoại / transcript</label><textarea id="script" placeholder="Lời thoại được tự động lưu riêng cho từng cấu hình kênh."></textarea><div class="draft-tools"><span id="draftStatus">Bản nháp sẽ tự động lưu theo kênh.</span><button id="restoreDraft" type="button" disabled>↶ Khôi phục bản trước</button></div></div>
       <div class="title"><span>01</span><div><h2>Kho tư liệu</h2><p>Tự lưu và tự nạp riêng theo từng kênh</p></div></div>
       <div class="folder-console"><textarea id="folderPaths" rows="3" placeholder="Các folder đã chọn sẽ xuất hiện ở đây. Bạn cũng có thể dán nhiều đường dẫn, mỗi dòng một folder."></textarea><div class="folder-buttons"><button id="pickFolder" type="button">▣ Chọn folder từ máy</button><button id="addFolders" type="button">↻ Quét các đường dẫn</button></div></div>
       <div id="folderList" class="folder-list">Chưa có thư mục cục bộ.</div>
@@ -109,6 +110,6 @@
       <div id="timeline" class="timeline"><div class="timeline-empty">Chưa có cảnh để hiển thị.</div></div>
     </section>
   </main>
-  <script src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

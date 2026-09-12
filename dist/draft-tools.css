@@ -1,0 +1,6 @@
+.auto-pipeline-data{display:block!important}
+.auto-pipeline-data>#voiceDrop,.auto-pipeline-data>#whisperBtn,.auto-pipeline-data>#whisperStatus,.auto-pipeline-data>#audio{display:none!important}
+.dialogue-label{display:block;margin:0 0 7px;color:#b9c8c2;font-size:12px;font-weight:800}
+.draft-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:-5px;color:#81938c;font-size:10px}
+.draft-tools button{padding:6px 9px;border:1px solid #35423d;border-radius:7px;background:#171e1b;color:#c5d1cc;font-size:10px;cursor:pointer}
+.draft-tools button:disabled{opacity:.4;cursor:not-allowed}

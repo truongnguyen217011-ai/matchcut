@@ -1,3 +1,5 @@
+import { mergeDialogueDrafts, normalizeDialogueDrafts, restoreDialogueRevision, saveDialogueDraft } from "./dialogue-drafts.js";
+
 const $ = (s) => document.querySelector(s);
 const rgba = (hex, opacity) => { const value = String(hex || "#000000").replace("#", "").padEnd(6, "0").slice(0, 6); return `rgba(${parseInt(value.slice(0,2),16)},${parseInt(value.slice(2,4),16)},${parseInt(value.slice(4,6),16)},${Math.min(1,Math.max(0,Number(opacity) || 0))})`; };
 const audio = $("#audio"),
@@ -202,14 +204,25 @@ function moveSubtitle(event) { const rect = positionStage.getBoundingClientRect(
 positionStage.addEventListener("pointerdown", (event) => { positionStage.setPointerCapture(event.pointerId); moveSubtitle(event); });
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
+const DRAFT_KEY = "matchcut.dialogueDrafts.v1";
 const PROFILE_ASSET_INPUTS = { intro:"#introInput", outro:"#outroInput", overlay:"#overlayInput", watermark:"#watermarkInput", music:"#musicInput" };
 const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
+let dialogueDrafts = {};
+try { dialogueDrafts = normalizeDialogueDrafts(JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}")); } catch { dialogueDrafts = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
 let activeProfile = localStorage.getItem(`${PROFILE_KEY}.active`) || Object.keys(profiles)[0];
 let profileSyncReady = false;
-function persistProfiles() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); if (profileSyncReady) void fetch("/api/project-state", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ profiles, activeProfile }) }); }
+function persistProjectState() { localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles)); localStorage.setItem(`${PROFILE_KEY}.active`, activeProfile); localStorage.setItem(DRAFT_KEY, JSON.stringify(dialogueDrafts)); if (profileSyncReady) void fetch("/api/project-state", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ profiles, activeProfile, dialogueDrafts }) }); }
+function persistProfiles() { persistProjectState(); }
+let draftSaveTimer;
+function updateDraftStatus(message) { const draft = dialogueDrafts[activeProfile]; $("#draftStatus").textContent = message || (draft?.updatedAt ? `Đã tự lưu ${new Date(draft.updatedAt).toLocaleTimeString("vi-VN")}.` : "Bản nháp sẽ tự động lưu theo kênh."); $("#restoreDraft").disabled = !draft?.revisions?.length; }
+function saveActiveDialogue({ snapshot = false, reason = "autosave", immediate = false } = {}) {
+  clearTimeout(draftSaveTimer);
+  const save = () => { dialogueDrafts = saveDialogueDraft(dialogueDrafts, activeProfile, script.value, { snapshot, reason }); persistProjectState(); updateDraftStatus(); };
+  if (immediate) save(); else { $("#draftStatus").textContent = "Đang tự lưu…"; draftSaveTimer = setTimeout(save, 350); }
+}
 function renderProfileSelect() { const select = $("#profileSelect"); select.innerHTML = Object.entries(profiles).map(([id,p]) => `<option value="${id}">${p.profileName || "Chưa đặt tên"}</option>`).join(""); select.value = activeProfile; }
 function renderProfileAssetState(profile = profiles[activeProfile] || {}) {
   for (const [field, selector] of Object.entries(PROFILE_ASSET_INPUTS)) {
@@ -219,7 +232,7 @@ function renderProfileAssetState(profile = profiles[activeProfile] || {}) {
     note.textContent = profile.profileAssets?.[field]?.originalName ? `Đã lưu trên máy: ${profile.profileAssets[field].originalName}` : "Chưa lưu tệp cho kênh này";
   }
 }
-function loadProfile(id) { const profile = profiles[id]; if (!profile) return; activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } $("#folderPaths").value = profile.folderPaths || ""; renderProfileAssetState(profile); persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; setTimeout(() => void loadProfileMediaLibrary(id, profile.folderPaths || ""), 0); }
+function loadProfile(id) { const profile = profiles[id]; if (!profile) return; if (activeProfile && activeProfile !== id) saveActiveDialogue({ immediate:true }); activeProfile = id; if (profile.fontSizePercent === undefined && profile.fontSize !== undefined) profile.fontSizePercent = Math.round(Number(profile.fontSize) / 56 * 100); if (profile.transition === "zoom") profile.transition = "zoom-in"; if (profile.transition === "slide") profile.transition = "slide-left"; if (profile.subtitleX === undefined || profile.subtitleY === undefined) { const point = POSITION_PRESETS[profile.subtitlePosition] || POSITION_PRESETS.bottom; profile.subtitleX = point[0]; profile.subtitleY = point[1]; } for (const key of PROFILE_FIELDS) { const control = $(`#${key}`); if (!control || profile[key] === undefined) continue; if (control.type === "checkbox") control.checked = Boolean(profile[key]); else control.value = profile[key]; } $("#folderPaths").value = profile.folderPaths || ""; script.value = dialogueDrafts[id]?.text || ""; updateDraftStatus(); renderProfileAssetState(profile); persistProfiles(); renderProfileSelect(); applyCaptionStyle(); $("#profileStatus").textContent = `Đã nạp “${profile.profileName}”.`; setTimeout(() => void loadProfileMediaLibrary(id, profile.folderPaths || ""), 0); }
 function snapshotProfile() { const settings = effectSettings(); return Object.fromEntries(PROFILE_FIELDS.map((key) => [key, settings[key]])); }
 $("#profileSelect").onchange = (event) => loadProfile(event.target.value);
 $("#renameProfile").onclick = () => {
@@ -245,12 +258,12 @@ $("#saveProfile").onclick = async () => {
   } catch (error) { $("#profileStatus").textContent = `Lỗi lưu kênh: ${error.message}`; }
   finally { button.disabled = false; }
 };
-$("#newProfile").onclick = () => { activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...snapshotProfile(), profileName: `Kênh ${Object.keys(profiles).length + 1}` }; loadProfile(activeProfile); $("#profileName").focus(); $("#profileName").select(); };
-$("#cloneProfile").onclick = () => { const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileAssets:{}, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
+$("#newProfile").onclick = () => { saveActiveDialogue({ immediate:true }); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...snapshotProfile(), profileName: `Kênh ${Object.keys(profiles).length + 1}` }; loadProfile(activeProfile); $("#profileName").focus(); $("#profileName").select(); };
+$("#cloneProfile").onclick = () => { saveActiveDialogue({ immediate:true }); const source = profiles[activeProfile] || snapshotProfile(); activeProfile = `channel-${Date.now()}`; profiles[activeProfile] = { ...source, profileAssets:{}, profileName: `${source.profileName || "Kênh"} - Bản sao` }; loadProfile(activeProfile); };
 $("#deleteProfile").onclick = () => { if (Object.keys(profiles).length === 1) { $("#profileStatus").textContent = "Phải giữ lại ít nhất một cấu hình kênh."; return; } const oldName = profiles[activeProfile]?.profileName; delete profiles[activeProfile]; activeProfile = Object.keys(profiles)[0]; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); $("#profileStatus").textContent = `Đã xóa “${oldName}”.`; };
 renderProfileSelect();
 loadProfile(activeProfile);
-void (async () => { try { const response = await fetch("/api/project-state"), saved = await response.json(); if (saved.profiles && Object.keys(saved.profiles).length) { profiles = saved.profiles; activeProfile = saved.activeProfile && profiles[saved.activeProfile] ? saved.activeProfile : Object.keys(profiles)[0]; } } catch {} finally { profileSyncReady = true; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); } })();
+void (async () => { try { const response = await fetch("/api/project-state"), saved = await response.json(); dialogueDrafts = mergeDialogueDrafts(dialogueDrafts, saved.dialogueDrafts); if (saved.profiles && Object.keys(saved.profiles).length) { profiles = saved.profiles; activeProfile = saved.activeProfile && profiles[saved.activeProfile] ? saved.activeProfile : Object.keys(profiles)[0]; } } catch {} finally { profileSyncReady = true; persistProfiles(); renderProfileSelect(); loadProfile(activeProfile); ready(); } })();
 function mediaPlan(count) {
   if (!assets.length) return [];
   const mode = $("#mediaSelectionMode").value;
@@ -325,7 +338,10 @@ voice.onchange = () => {
 };
 script.oninput = () => {
   ready();
+  saveActiveDialogue();
 };
+$("#restoreDraft").onclick = () => { const restored = restoreDialogueRevision(dialogueDrafts, activeProfile); if (restored.text === null) return; dialogueDrafts = restored.drafts; script.value = restored.text; persistProjectState(); updateDraftStatus("Đã khôi phục bản trước; bản vừa thay cũng được giữ lại."); ready(); };
+window.addEventListener("pagehide", () => saveActiveDialogue({ immediate:true }));
 function addMediaFiles(files) {
   for (const f of files) {
     if (assets.some((asset) => asset.file && asset.name === f.name && asset.file.size === f.size && asset.file.lastModified === f.lastModified)) continue;
@@ -623,6 +639,7 @@ $("#playBtn").onclick = async () => {
 $("#whisperBtn").onclick = async () => {
   const button = $("#whisperBtn"),
     status = $("#whisperStatus");
+  saveActiveDialogue({ immediate:true });
   button.disabled = true;
   status.className = "whisper-status show";
   status.textContent =
@@ -638,7 +655,11 @@ $("#whisperBtn").onclick = async () => {
       data = await response.json();
     if (!response.ok) throw new Error(data.error || "Không thể nhận dạng");
     whisperChunks = data.chunks || [];
-    script.value = data.text || whisperChunks.map((x) => x.text).join(" ");
+    const whisperText = data.text || whisperChunks.map((x) => x.text).join(" ");
+    saveActiveDialogue({ immediate:true });
+    dialogueDrafts = saveDialogueDraft(dialogueDrafts, activeProfile, whisperText, { snapshot:true, reason:"before-whisper" });
+    script.value = whisperText;
+    persistProjectState(); updateDraftStatus("Whisper đã cập nhật lời thoại; bản trước vẫn có thể khôi phục.");
     status.textContent = `Đã tạo ${whisperChunks.length} đoạn bằng ${data.engine || "Whisper"} (${data.device || "CPU"}). Timeline sẽ ưu tiên các timestamp này.`;
     ready();
   } catch (error) {

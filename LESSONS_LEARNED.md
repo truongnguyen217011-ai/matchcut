@@ -235,3 +235,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Probe metadata từ ổ mạng phải chạy song song có giới hạn và cache Promise theo đường dẫn cho toàn bộ phiên backend; không probe tuần tự lại cùng footage ở từng khối.
 - Dùng bài test 3 giây để chặn hồi quy: tiến trình phải tự thoát, encoder phải tạo trailer MP4 và toàn bộ file phải giải mã được.
 - Với waveform, nguồn `color`/`gradients` là vô hạn. `alphamerge` bắt buộc dùng `shortest=1`; nếu không nó giữ frame mask cuối và khiến render không bao giờ nhận EOF.
+
+### 33. Lời thoại phải tự lưu theo kênh và có lịch sử trước khi Whisper ghi đè
+
+- Nội dung ô lời thoại là dữ liệu người dùng, không được chỉ giữ trong DOM vì tải lại trang, đóng tool hoặc đổi cấu hình sẽ làm mất.
+- Mỗi cấu hình kênh phải có bản nháp riêng, lưu ngay ở `localStorage` và đồng bộ vào `data/project-state.json`; khi hai bản khác nhau phải giữ bản có `updatedAt` mới hơn.
+- Trước khi áp dụng kết quả Whisper, phải chụp bản hiện tại vào lịch sử khôi phục. Nút khôi phục phải đổi chỗ an toàn giữa bản hiện tại và bản trước để người dùng có thể hoàn tác cả thao tác khôi phục.
+- Kiểm thử bắt buộc: tải lại trang, đổi qua lại hai kênh, đóng/mở tool, và xác nhận bản trước Whisper vẫn khôi phục được.
