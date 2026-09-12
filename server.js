@@ -557,6 +557,8 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   if (music) { musicIndex = inputIndex++; inputArgs.push("-stream_loop", "-1"); if (timeOffset > 0) inputArgs.push("-ss", timeOffset.toFixed(3)); inputArgs.push("-t", totalDuration.toFixed(3), "-i", music.path); }
   let overlayIndex = null;
   if (overlayImagePath) { overlayIndex = inputIndex++; inputArgs.push("-loop", "1", "-framerate", "1", "-i", overlayImagePath); }
+  let profileOverlayIndex = null;
+  if (files?.overlay?.[0]?.path) { profileOverlayIndex = inputIndex++; inputArgs.push("-stream_loop", "-1", "-i", files.overlay[0].path); }
   const watermark = files?.watermark?.[0];
   let watermarkIndex = null;
   if (watermark) { watermarkIndex = inputIndex++; inputArgs.push("-loop", "1", "-framerate", settings.watermarkRotate ? "30" : "1", "-i", watermark.path); }
@@ -597,6 +599,10 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     const scale = overlayImagePreScaled ? "" : `scale=${width}:${height},`;
     filters.push(`[${overlayIndex}:v]${scale}format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
     filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
+  }
+  if (profileOverlayIndex !== null) {
+    filters.push(`[${profileOverlayIndex}:v]scale=${width}:${height},format=rgba[profileoverlay]`);
+    filters.push(`[${current}][profileoverlay]overlay=0:0:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
   const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
@@ -908,8 +914,9 @@ app.post(
           "-i",
           audioSource,
         ];
-      let nextVideoInput = 2, overlayInputIndex = null, watermarkInputIndex = null, voiceWaveformInputIndex = null, musicWaveformInputIndex = null;
+      let nextVideoInput = 2, overlayInputIndex = null, profileOverlayInputIndex = null, watermarkInputIndex = null, voiceWaveformInputIndex = null, musicWaveformInputIndex = null;
       if (overlayImagePath) { overlayInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-framerate", "1", "-i", overlayImagePath); }
+      if (req.files?.overlay?.[0]?.path) { profileOverlayInputIndex = nextVideoInput++; inputArgs.push("-stream_loop", "-1", "-i", req.files.overlay[0].path); }
       if (watermark) { watermarkInputIndex = nextVideoInput++; inputArgs.push("-loop", "1", "-framerate", settings.watermarkRotate ? "30" : "1", "-i", watermark.path); }
       if (settings.voiceWaveformEnabled) { voiceWaveformInputIndex = nextVideoInput++; inputArgs.push("-i", voice.path); }
       if (settings.waveformEnabled && music) { musicWaveformInputIndex = nextVideoInput++; inputArgs.push("-stream_loop", "-1", "-i", music.path); }
@@ -925,7 +932,7 @@ app.post(
         subtitleFilter = `subtitles=filename='${escaped}':fontsdir='${escapedFonts}'`;
       }
       const encodeArgs = [...inputArgs];
-      const hasVisualLayers = overlayInputIndex !== null || watermarkInputIndex !== null || voiceWaveformInputIndex !== null || musicWaveformInputIndex !== null;
+      const hasVisualLayers = overlayInputIndex !== null || profileOverlayInputIndex !== null || watermarkInputIndex !== null || voiceWaveformInputIndex !== null || musicWaveformInputIndex !== null;
       if (hasVisualLayers) {
         const filters = ["[0:v]null[vbase]"]; let current = "vbase", layerNumber = 0;
         if (overlayInputIndex !== null) {
@@ -933,6 +940,10 @@ app.post(
           const scale = overlayImagePreScaled ? "" : `scale=${width}:${height},`;
           filters.push(`[${overlayInputIndex}:v]${scale}format=rgba,colorchannelmixer=aa=${opacity.toFixed(2)}[overlayimg]`);
           filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
+        }
+        if (profileOverlayInputIndex !== null) {
+          filters.push(`[${profileOverlayInputIndex}:v]scale=${width}:${height},format=rgba[profileoverlay]`);
+          filters.push(`[${current}][profileoverlay]overlay=0:0:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
         const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
           waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
