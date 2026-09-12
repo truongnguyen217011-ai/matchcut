@@ -242,3 +242,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Mỗi cấu hình kênh phải có bản nháp riêng, lưu ngay ở `localStorage` và đồng bộ vào `data/project-state.json`; khi hai bản khác nhau phải giữ bản có `updatedAt` mới hơn.
 - Trước khi áp dụng kết quả Whisper, phải chụp bản hiện tại vào lịch sử khôi phục. Nút khôi phục phải đổi chỗ an toàn giữa bản hiện tại và bản trước để người dùng có thể hoàn tác cả thao tác khôi phục.
 - Kiểm thử bắt buộc: tải lại trang, đổi qua lại hai kênh, đóng/mở tool, và xác nhận bản trước Whisper vẫn khôi phục được.
+
+### 34. Nối MP4 phải xử lý cả AAC priming và thời lượng lệch khung hình
+
+- `-fflags +genpts` không đủ để ngăn DTS trùng khi stream-copy các MP4 độc lập. AAC priming có thể làm packet audio chồng nhau; thời lượng container làm khung đầu đoạn sau trùng timestamp với khung cuối đoạn trước.
+- Chỉ nối một lần cho toàn bộ chuỗi `intro → các khối nội dung → outro`; không nối khối trước rồi nối intro/outro lần hai.
+- Manifest concat phải ghi `duration` có khoảng bảo vệ một frame giữa các đoạn. Video H.264 vẫn dùng stream-copy; audio được tạo lại liên tục bằng `aresample=async=1:first_pts=0`.
+- Trên Windows ưu tiên `aac_mf` sau khi probe mã hóa thật thành công, rồi fallback về `aac`. Với audio sản xuất 41 phút, `aac_mf` mất khoảng 15,6 giây so với khoảng 70 giây của AAC phần mềm.
+- Kiểm thử phải chặn `Non-monotonic DTS`, giải mã toàn bộ file và kiểm tra cả ranh giới giữa các khối nội dung lẫn intro/outro.

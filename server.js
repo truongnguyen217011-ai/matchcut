@@ -21,7 +21,7 @@ import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
-import { compactVisualScenes } from "./render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
@@ -144,7 +144,7 @@ function probeHasAudio(file) {
     child.on("close", () => resolve(/Stream #.*Audio:/i.test(details)));
   });
 }
-let nvencUsable, cudaPipelineUsable;
+let nvencUsable, cudaPipelineUsable, mediaFoundationAacUsable;
 async function hasNvenc() {
   if (nvencUsable !== undefined) return nvencUsable;
   try {
@@ -165,6 +165,17 @@ async function hasCudaPipeline() {
     cudaPipelineUsable = false;
   }
   return cudaPipelineUsable;
+}
+async function preferredAacEncoder() {
+  if (mediaFoundationAacUsable === undefined) {
+    try {
+      await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=0.1", "-c:a", "aac_mf", "-f", "null", "NUL"]);
+      mediaFoundationAacUsable = true;
+    } catch {
+      mediaFoundationAacUsable = false;
+    }
+  }
+  return mediaFoundationAacUsable ? "aac_mf" : "aac";
 }
 const isCudaPipelineError = (error) => /cuda|cuvid|nvdec|device setup failed|hardware frames|unsupported device|function not implemented/i.test(error instanceof Error ? error.message : String(error));
 async function runVideoEncode(baseArgs, output, options = {}) {
@@ -196,23 +207,26 @@ async function normalizeBoundaryVideo(source, output, width, height, fast) {
 }
 async function attachIntroOutro({ dir, content, files, width, height, fast, onProgress }) {
   const intro = files?.intro?.[0], outro = files?.outro?.[0];
-  if (!intro && !outro) return content;
+  const contentSegments = (Array.isArray(content) ? content : [{ file:content }]).filter((segment) => segment?.file);
+  if (!intro && !outro && contentSegments.length === 1) return contentSegments[0].file;
   await onProgress?.("Ghép Intro và Outro", 96);
   const segments = [];
   if (intro) {
     const normalizedIntro = path.join(dir, "normalized-intro.mp4");
     await normalizeBoundaryVideo(intro.path, normalizedIntro, width, height, fast);
-    segments.push(normalizedIntro);
+    segments.push({ file:normalizedIntro, duration:await cachedMediaDuration(normalizedIntro) });
   }
-  segments.push(content);
+  for (const segment of contentSegments) segments.push({ file:segment.file, duration:segment.duration || await cachedMediaDuration(segment.file) });
   if (outro) {
     const normalizedOutro = path.join(dir, "normalized-outro.mp4");
     await normalizeBoundaryVideo(outro.path, normalizedOutro, width, height, fast);
-    segments.push(normalizedOutro);
+    segments.push({ file:normalizedOutro, duration:await cachedMediaDuration(normalizedOutro) });
   }
   const list = path.join(dir, "intro-content-outro.txt"), output = path.join(dir, "matchcut-with-intro-outro.mp4");
-  await writeFile(list, segments.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join("\n"), "utf8");
-  await run(["-y", "-hide_banner", "-loglevel", "error", "-fflags", "+genpts", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", output]);
+  await writeFile(list, buildConcatManifest(segments), "utf8");
+  // MP4/AAC priming can overlap audio DTS at file boundaries. Keep the long
+  // H.264 video stream untouched, but rebuild the much cheaper audio timeline.
+  await run(buildBoundaryConcatArgs(list, output, await preferredAacEncoder()));
   return output;
 }
 async function availableExportPath(originalName) {
@@ -456,14 +470,10 @@ async function renderChunkedSinglePass(options) {
       .filter((scene) => Number(scene.end) > offset && Number(scene.start) < end)
       .map((scene) => ({ ...scene, start: Math.max(0, Number(scene.start) - offset), end: Math.min(duration, Number(scene.end) - offset) }));
     const result = await renderSinglePass({ ...options, scenes: localScenes, captionScenes: localCaptions, timeOffset: offset, outputName: `fast-chunk-${String(outputs.length).padStart(3, "0")}.mp4` });
-    outputs.push(result.output); encoder = result.encoder; acceleration = result.acceleration;
+    outputs.push({ file:result.output, duration }); encoder = result.encoder; acceleration = result.acceleration;
   }
-  await onProgress?.("Ghép các khối MP4", 92);
-  const concatFile = path.join(dir, "fast-chunks.txt");
-  await writeFile(concatFile, outputs.map((file) => `file '${file.replaceAll("'", "'\\''")}'`).join("\n"), "utf8");
-  const output = path.join(dir, "matchcut-output.mp4");
-  await run(["-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", "-movflags", "+faststart", output]);
-  return { output, encoder, acceleration, pipeline: `chunked-single-pass-${outputs.length}` };
+  await onProgress?.("Chuẩn bị ghép các khối MP4", 92);
+  return { output:outputs[0]?.file, segments:outputs, encoder, acceleration, pipeline: `chunked-single-pass-${outputs.length}` };
 }
 app.post("/api/pick-folder", async (_req, res) => {
   try {
@@ -562,7 +572,7 @@ app.post(
           } : null;
           const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, onProgress };
           const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
-          singlePass.output = await attachIntroOutro({ dir, content: singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
+          singlePass.output = await attachIntroOutro({ dir, content: singlePass.segments || singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
           const savedPath = await availableExportPath(voice.originalname);
           await copyFile(singlePass.output, savedPath);
           return sendRenderResult({

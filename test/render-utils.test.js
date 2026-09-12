@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAssTextEffect } from "../ass-effects.js";
-import { compactVisualScenes } from "../render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes } from "../render-utils.js";
 
 const settings = { textEffect: "typewriter", wordsPerCaption: 8, maxLines: 2, language: "en", subtitlePosition: "bottom" };
 
@@ -42,4 +42,16 @@ test("timeline hình được rút gọn nhưng vẫn phủ toàn bộ timeline 
   assert.ok(visuals.length <= 96);
   assert.equal(visuals[0].start, 0);
   assert.equal(visuals.at(-1).end, captions.at(-1).end);
+});
+
+test("nối biên giữ nguyên video và cho phép chọn AAC tăng tốc", () => {
+  const args = buildBoundaryConcatArgs("segments.txt", "joined.mp4", "aac_mf");
+  assert.deepEqual(args.slice(args.indexOf("-c:v"), args.indexOf("-c:v") + 2), ["-c:v", "copy"]);
+  assert.deepEqual(args.slice(args.indexOf("-c:a"), args.indexOf("-c:a") + 2), ["-c:a", "aac_mf"]);
+  assert.ok(args.includes("aresample=async=1:first_pts=0"));
+});
+
+test("manifest concat chèn khoảng bảo vệ một frame giữa các đoạn", () => {
+  const manifest = buildConcatManifest([{ file:"one.mp4", duration:1.03 }, { file:"two.mp4", duration:2.07 }]);
+  assert.equal(manifest, "file 'one.mp4'\nduration 1.066666667\nfile 'two.mp4'");
 });
