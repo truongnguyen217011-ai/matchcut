@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyAssTextEffect } from "../ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes } from "../render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapWithConcurrency } from "../render-utils.js";
 
 const settings = { textEffect: "typewriter", wordsPerCaption: 8, maxLines: 2, language: "en", subtitlePosition: "bottom" };
 
@@ -54,4 +54,34 @@ test("nối biên giữ nguyên video và cho phép chọn AAC tăng tốc", () 
 test("manifest concat chèn khoảng bảo vệ một frame giữa các đoạn", () => {
   const manifest = buildConcatManifest([{ file:"one.mp4", duration:1.03 }, { file:"two.mp4", duration:2.07 }]);
   assert.equal(manifest, "file 'one.mp4'\nduration 1.066666667\nfile 'two.mp4'");
+});
+
+test("map giới hạn số tác vụ chạy song song và giữ đúng thứ tự kết quả", async () => {
+  let active = 0, peak = 0;
+  const result = await mapWithConcurrency([30, 5, 15, 1], 2, async (delay, index) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    active -= 1;
+    return index;
+  });
+  assert.deepEqual(result, [0, 1, 2, 3]);
+  assert.equal(peak, 2);
+});
+
+test("map chờ tác vụ đang chạy dừng trước khi trả lỗi", async () => {
+  const events = [];
+  await assert.rejects(
+    mapWithConcurrency(["fail", "active", "never"], 2, async (item) => {
+      if (item === "fail") {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        events.push("failed");
+        throw new Error("chunk failed");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      events.push(item);
+    }),
+    /chunk failed/,
+  );
+  assert.deepEqual(events, ["failed", "active"]);
 });

@@ -257,3 +257,11 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - `startedAt` phải được chụp trước khi tạo `FormData` và tải voice lên backend, rồi gửi cùng request để tổng thời gian phản ánh đúng lúc người dùng bắt đầu chạy.
 - Một lần chạy sạch Kênh 2 với 41:17,19 đầu ra, 84 cảnh, 503 cue, intro/outro/overlay và pipeline `chunked-single-pass-4` hoàn tất trong 16:34,038, thấp hơn giới hạn 17 phút 25,962 giây.
 - Chỉ công nhận kết quả sau khi xác nhận H.264 1080p30 + AAC 48 kHz stereo và giải mã toàn bộ video/audio không có lỗi DTS.
+
+### 36. Các khối độc lập có thể render song song nhưng phải cô lập artifact và lỗi
+
+- Với RTX 3060 12 GB, chạy tối đa hai khối single-pass cùng lúc giữ nguyên FPS, bitrate, hiệu ứng và giảm benchmark 41:17,19 từ 16:34,038 xuống 15:14,728; khoảng an toàn dưới 17 phút tăng từ 25,962 giây lên 1:45,272.
+- Mỗi khối phải có file ASS, filter graph và MP4 tạm mang tên riêng. Dùng chung `captions.ass` hoặc `single-pass.ffgraph` sẽ tạo race và có thể ghép sai nội dung.
+- Worker phải giữ thứ tự segment theo timeline dù khối hoàn tất không theo thứ tự. Khi một khối lỗi, ngừng nhận khối mới nhưng chờ mọi FFmpeg đang chạy kết thúc rồi mới dọn thư mục tạm.
+- Chỉ bật song song khi CUDA pipeline khả dụng và Fast Render đang bật; pipeline CPU hoặc chế độ chất lượng đầy đủ vẫn chạy tuần tự để tránh quá tải.
+- Lượt xác nhận dùng khoảng 6,64/12 GB VRAM, không fallback CPU, xuất `chunked-single-pass-4-parallel-2` và giải mã toàn bộ MP4 không có lỗi DTS.

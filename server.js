@@ -21,7 +21,7 @@ import wavefile from "wavefile";
 import { buildSubtitleCues } from "./subtitle-utils.js";
 import { parseSrt } from "./srt-utils.js";
 import { applyAssTextEffect, expandTypewriterScene } from "./ass-effects.js";
-import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes } from "./render-utils.js";
+import { buildBoundaryConcatArgs, buildConcatManifest, compactVisualScenes, mapWithConcurrency } from "./render-utils.js";
 import { assColor, resolveCaptionBackground } from "./caption-backgrounds.js";
 import { buildWaveformSourceFilters } from "./waveform-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
@@ -438,14 +438,16 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     filters.push(`[${current}][wm]overlay=W-w-35:35:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   if (settings.subtitleEnabled !== false) {
-    const assPath = path.join(dir, "captions.ass");
+    const artifactStem = path.parse(outputName).name.replace(/[^a-z0-9_-]/gi, "-");
+    const assPath = path.join(dir, `${artifactStem}-captions.ass`);
     await writeFile(assPath, createAss(captionScenes || scenes, settings), "utf8");
     const escaped = assPath.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
     const escapedFonts = fontsRoot.replaceAll("\\", "/").replace(":", "\\:").replaceAll("'", "\\'");
     filters.push(`[${current}]subtitles=filename='${escaped}':fontsdir='${escapedFonts}',setsar=1[vout]`);
   } else filters.push(`[${current}]setsar=1[vout]`);
 
-  const graphPath = path.join(dir, "single-pass.ffgraph");
+  const artifactStem = path.parse(outputName).name.replace(/[^a-z0-9_-]/gi, "-");
+  const graphPath = path.join(dir, `${artifactStem}-single-pass.ffgraph`);
   await writeFile(graphPath, filters.join(";\n"), "utf8");
   const output = path.join(dir, outputName);
   try {
@@ -459,21 +461,26 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
   }
 }
 async function renderChunkedSinglePass(options) {
-  const { dir, scenes, captionScenes = scenes, onProgress } = options, chunkSize = 24, outputs = [], chunkCount = Math.ceil(scenes.length / chunkSize);
-  let encoder = "h264_nvenc", acceleration = "unknown";
-  for (let index = 0; index < scenes.length; index += chunkSize) {
-    const chunkNumber = outputs.length + 1;
-    await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}`, 60 + Math.floor(((chunkNumber - 1) / chunkCount) * 30));
-    const group = scenes.slice(index, index + chunkSize), offset = Number(group[0].start) || 0, end = Number(group.at(-1).end), duration = end - offset;
+  const { scenes, captionScenes = scenes, onProgress } = options, chunkSize = 24, chunkCount = Math.ceil(scenes.length / chunkSize);
+  const gpuMode = options.gpuMode ?? await hasCudaPipeline();
+  const concurrency = gpuMode && options.settings.fastRender !== false ? 2 : 1;
+  const plans = Array.from({ length: chunkCount }, (_, chunkIndex) => ({ chunkIndex, group: scenes.slice(chunkIndex * chunkSize, (chunkIndex + 1) * chunkSize) }));
+  let finished = 0;
+  const outputs = await mapWithConcurrency(plans, concurrency, async ({ chunkIndex, group }) => {
+    const chunkNumber = chunkIndex + 1;
+    await onProgress?.(`Render khối ${chunkNumber}/${chunkCount}${concurrency > 1 ? " (song song 2 khối)" : ""}`, 60 + Math.floor((finished / chunkCount) * 30));
+    const offset = Number(group[0].start) || 0, end = Number(group.at(-1).end), duration = end - offset;
     const localScenes = group.map((scene) => ({ ...scene, start: Number(scene.start) - offset, end: Number(scene.end) - offset }));
     const localCaptions = captionScenes
       .filter((scene) => Number(scene.end) > offset && Number(scene.start) < end)
       .map((scene) => ({ ...scene, start: Math.max(0, Number(scene.start) - offset), end: Math.min(duration, Number(scene.end) - offset) }));
-    const result = await renderSinglePass({ ...options, scenes: localScenes, captionScenes: localCaptions, timeOffset: offset, outputName: `fast-chunk-${String(outputs.length).padStart(3, "0")}.mp4` });
-    outputs.push({ file:result.output, duration }); encoder = result.encoder; acceleration = result.acceleration;
-  }
+    const result = await renderSinglePass({ ...options, gpuMode, scenes: localScenes, captionScenes: localCaptions, timeOffset: offset, outputName: `fast-chunk-${String(chunkIndex).padStart(3, "0")}.mp4` });
+    finished += 1;
+    await onProgress?.(`Đã render ${finished}/${chunkCount} khối`, 60 + Math.floor((finished / chunkCount) * 30));
+    return { file:result.output, duration, encoder:result.encoder, acceleration:result.acceleration };
+  });
   await onProgress?.("Chuẩn bị ghép các khối MP4", 92);
-  return { output:outputs[0]?.file, segments:outputs, encoder, acceleration, pipeline: `chunked-single-pass-${outputs.length}` };
+  return { output:outputs[0]?.file, segments:outputs, encoder:outputs.at(-1)?.encoder || "unknown", acceleration:outputs.at(-1)?.acceleration || "unknown", pipeline: `chunked-single-pass-${outputs.length}-parallel-${concurrency}` };
 }
 app.post("/api/pick-folder", async (_req, res) => {
   try {

@@ -33,3 +33,21 @@ export function buildConcatManifest(segments, fps = 30) {
     return `file '${escaped}'\nduration ${guardedDuration.toFixed(9)}`;
   }).join("\n");
 }
+
+export async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0, firstError = null;
+  const workerCount = Math.max(1, Math.min(Number(concurrency) || 1, items.length));
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (!firstError && cursor < items.length) {
+      const index = cursor++;
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        firstError ||= error;
+      }
+    }
+  }));
+  if (firstError) throw firstError;
+  return results;
+}
