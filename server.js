@@ -601,8 +601,10 @@ async function renderSinglePass({ dir, files, voice, media, scenes, captionScene
     filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   if (profileOverlayIndex !== null) {
+    const showSeconds = Math.max(1, Math.min(300, Number(settings.profileOverlayDuration) || 5)), mode = settings.profileOverlayMode || "full";
+    const enable = mode === "start-end" ? `between(t,0,${showSeconds})+between(t,${Math.max(0, totalDuration - showSeconds).toFixed(3)},${totalDuration.toFixed(3)})` : mode === "interval" ? `lt(mod(t,${Math.max(6, (Number(settings.profileOverlayInterval) || 1) * 60).toFixed(3)}),${showSeconds})` : "1";
     filters.push(`[${profileOverlayIndex}:v]scale=${width}:${height},format=rgba[profileoverlay]`);
-    filters.push(`[${current}][profileoverlay]overlay=0:0:eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
+    filters.push(`[${current}][profileoverlay]overlay=0:0:enable='${enable}':eof_action=repeat:shortest=0[layer${++layer}]`); current = `layer${layer}`;
   }
   const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100));
   const waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));
@@ -942,8 +944,11 @@ app.post(
           filters.push(`[${current}][overlayimg]overlay=${overlayImageX}:${overlayImageY}:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
         if (profileOverlayInputIndex !== null) {
+          const showSeconds = Math.max(1, Math.min(300, Number(settings.profileOverlayDuration) || 5)), mode = settings.profileOverlayMode || "full";
+          const totalTimelineDuration = Math.max(...scenes.map((scene) => Number(scene.end) || 0));
+          const enable = mode === "start-end" ? `between(t,0,${showSeconds})+between(t,${Math.max(0, totalTimelineDuration - showSeconds).toFixed(3)},${totalTimelineDuration.toFixed(3)})` : mode === "interval" ? `lt(mod(t,${Math.max(6, (Number(settings.profileOverlayInterval) || 1) * 60).toFixed(3)}),${showSeconds})` : "1";
           filters.push(`[${profileOverlayInputIndex}:v]scale=${width}:${height},format=rgba[profileoverlay]`);
-          filters.push(`[${current}][profileoverlay]overlay=0:0:eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
+          filters.push(`[${current}][profileoverlay]overlay=0:0:enable='${enable}':eof_action=repeat:shortest=0[v${++layerNumber}]`); current = `v${layerNumber}`;
         }
         const waveWidth = Math.max(120, Math.round(width * Math.min(100, Math.max(20, Number(settings.waveformWidth) || 70)) / 100)),
           waveHeight = Math.max(40, Math.min(300, Number(settings.waveformHeight) || 120));

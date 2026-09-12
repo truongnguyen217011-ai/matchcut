@@ -70,6 +70,9 @@ function effectSettings() {
     overlayImageEnabled: $("#overlayImageEnabled").checked,
     overlayImageFolder: $("#overlayImageFolder").value,
     overlayImageOpacity: Number($("#overlayImageOpacity").value),
+    profileOverlayMode: $("#profileOverlayMode").value,
+    profileOverlayDuration: Number($("#profileOverlayDuration").value),
+    profileOverlayInterval: Number($("#profileOverlayInterval").value),
     voiceVolume: Number($("#voiceVolume").value),
     voiceDelay: Number($("#voiceDelay").value),
     musicVolume: Number($("#musicVolume").value),
@@ -207,6 +210,7 @@ const PROFILE_KEY = "matchcut.channelProfiles.v2";
 const DRAFT_KEY = "matchcut.dialogueDrafts.v1";
 const PROFILE_ASSET_INPUTS = { intro:"#introInput", outro:"#outroInput", overlay:"#overlayInput", watermark:"#watermarkInput", music:"#musicInput" };
 const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
+PROFILE_FIELDS.push("profileOverlayMode", "profileOverlayDuration", "profileOverlayInterval");
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 let dialogueDrafts = {};
