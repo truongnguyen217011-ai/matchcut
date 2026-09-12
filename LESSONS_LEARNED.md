@@ -359,3 +359,8 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 
 - Fast Render hỗ trợ `MATCHCUT_NVENC_CQ`, mặc định vẫn là CQ 23; CQ 25 chỉ dùng thử khi đặt biến môi trường.
 - Mẫu 25 giây CQ 25 vẫn đạt H.264 30 fps và decode exit 0, nhưng footage được chọn ngẫu nhiên nên kích thước 28,66 MB không thể so trực tiếp với mẫu CQ 23 21,96 MB. Chưa đổi mặc định khi chưa có benchmark cùng input và QA chất lượng hình ảnh.
+
+### 51. Benchmark có thể cố định asset để A/B CQ công bằng
+
+- `scripts/benchmark_job.mjs` nhận `MATCHCUT_BENCHMARK_SELECTION=sequential` và in `selectionMode` trong JSON khởi tạo job.
+- Dùng cùng voice, folder, selection mode và profile cho hai job CQ23/CQ25; khi đó scene timeline/footage ổn định hơn so với `shuffle`, giúp so bitrate/thời gian có ý nghĩa.
