@@ -342,3 +342,10 @@ File này là nhật ký lỗi và quy tắc kỹ thuật bắt buộc của d�
 - Thử tăng từ 24 lên 28 cảnh để giảm số graph FFmpeg: job 41:17,19 chạy 3 chunk/3 worker, hoàn tất trong 6:50,641.
 - Mốc đã xác nhận với 24 cảnh là 4 chunk/3 worker trong 6:40,434; chunk 28 chậm hơn khoảng 10,207 giây dù không CUDA fallback và vẫn qua `parallel-3` verification.
 - Giữ lại chunk size 24. Không suy ra rằng ít chunk hơn luôn nhanh hơn; graph dài hơn và thời gian worker cuối có thể lấn át phần startup tiết kiệm được.
+
+### 48. NVENC p1 nhanh hơn p2 trên benchmark K2 đầy đủ
+
+- Thêm `MATCHCUT_NVENC_PRESET` để có thể override preset khi cần; mặc định Fast Render chuyển từ `p2` sang `p1`, còn render chậm vẫn dùng `p4`.
+- Benchmark cùng voice K2 41:17,19, 84 cảnh, 503 cue và cùng 4 chunk/3 worker: `p1` hoàn tất trong 6:30,390, so với `p2` 6:40,434, tiết kiệm 10,044 giây (~2,5%).
+- `p1` vẫn trả `h264_nvenc`, `nvdec-scale_cuda-nvenc`, `publishMode=hardlink`, `verificationMode=parallel-3`; không CUDA fallback và file vượt cổng 30 fps/decode.
+- Mẫu 25 giây cũng qua với `p1`; giữ biến môi trường để quay lại `p2` nếu QA hình ảnh thực tế phát hiện khác biệt.
