@@ -24,6 +24,7 @@ try {
       Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $projectRoot $_.Name) -Recurse -Force
     }
   }
+  $remote | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $projectRoot "update-manifest.json") -Encoding UTF8
   Write-Host "Da cap nhat MatchCut len $($remote.version)." -ForegroundColor Green
 } catch { Write-Warning "Khong cap nhat duoc: $($_.Exception.Message)" }
 finally { Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }
