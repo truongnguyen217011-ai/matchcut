@@ -326,8 +326,8 @@ function clearActiveVoice() {
 }
 voice.onchange = () => {
   const incoming = [...voice.files];
-  const subtitles = incoming.filter((file) => /\.srt$/i.test(file.name));
-  const audioFiles = incoming.filter((file) => !/\.srt$/i.test(file.name));
+  const subtitles = incoming.filter((file) => /\.(srt|txt)$/i.test(file.name));
+  const audioFiles = incoming.filter((file) => !/\.(srt|txt)$/i.test(file.name));
   const baseName = (name) => name.replace(/\.[^.]+$/, "").trim().toLocaleLowerCase();
   for (const file of audioFiles) {
     if (!batchFiles.some((item) => item.file.name === file.name && item.file.size === file.size && item.file.lastModified === file.lastModified)) batchFiles.push({ file, selected: true, status: "Chờ chạy" });
@@ -338,7 +338,7 @@ voice.onchange = () => {
   }
   setActiveVoice(audioFiles[0]);
   renderBatchList();
-  if (audioFiles.length || subtitles.length) batchLog(`Đã thêm ${audioFiles.length} voice và ghép được ${batchFiles.filter((item) => item.subtitleFile).length} SRT cùng tên.`);
+  if (audioFiles.length || subtitles.length) batchLog(`Đã thêm ${audioFiles.length} voice và ghép được ${batchFiles.filter((item) => item.subtitleFile).length} file timestamps cùng tên.`);
 };
 script.oninput = () => {
   ready();
@@ -773,15 +773,30 @@ function renderCurrentJobProgress() {
 }
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.subtitleFile ? "SRT sẵn" : "Whisper dự phòng"}</span>${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Thêm voice và SRT cùng tên ở bước 01.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.videoCount} video theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.videoFolder ? `<small class="job-output">${safeHtml(item.videoFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn file âm thanh để tự tìm timestamps và video cùng tên.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons(); renderCurrentJobProgress();
 }
-function isRunnableBatchItem(item) { return Boolean(item && item.serverStatus !== "completed" && item.status !== "Hoàn tất" && (item.jobId || (item.file && assets.length))); }
+function isRunnableBatchItem(item) { return Boolean(item && item.serverStatus !== "completed" && item.status !== "Hoàn tất" && (item.jobId || item.localEpisode || (item.file && assets.length))); }
 function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some(isRunnableBatchItem), backendBusy = batchFiles.some((item) => ["queued", "transcribing", "rendering"].includes(item.serverStatus)); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || backendBusy || !canRun; $("#runBatch").disabled = batchRunning || backendBusy || !canRun; $("#stopBatch").disabled = !batchRunning; }
 $("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
+$("#pickEpisodes").onclick = async () => {
+  const button = $("#pickEpisodes"); button.disabled = true; button.textContent = "Đang tìm bộ video…";
+  try {
+    const response = await fetch("/api/pick-episodes", { method:"POST" }), result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Không thể tìm bộ tập.");
+    for (const bundle of result.bundles || []) {
+      if (batchFiles.some((item) => item.localEpisode && item.audioPath === bundle.audioPath)) continue;
+      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, videoFolder:bundle.videoFolder, videoCount:bundle.videos.length, selected:true, status:"Sẵn sàng", stage:"Đã nhận đúng bộ tập", progress:0 });
+      batchLog(`✓ ${bundle.baseName}: đã tìm ${bundle.videos.length} video và ${bundle.timestampPath.split(/[\\/]/).at(-1)}.`);
+    }
+    for (const failure of result.errors || []) batchLog(`✕ ${failure.audioPath}: ${failure.error}`);
+    renderBatchList();
+  } catch (error) { batchLog(`Không thể tự tìm bộ tập: ${error.message}`); }
+  finally { button.disabled = false; button.textContent = "⚡ Tự tìm video theo tập"; }
+};
 $("#clearBatch").onclick = async () => {
   if (batchRunning) return;
   const button = $("#clearBatch"); button.disabled = true;
@@ -801,6 +816,11 @@ $("#stopBatch").onclick = () => { batchStopRequested = true; batchLog("Đã yêu
 async function processBatchItem(item) {
   if (!item.jobId) {
     item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; item.progress = 1; renderBatchList();
+    if (item.localEpisode) {
+      const response = await fetchWithRetry("/api/jobs/from-episode", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ audioPath:item.audioPath, settings:effectSettings(), profileId:activeProfile, startedAt:item.startedAt || new Date().toISOString() }) }, `lưu bộ tập ${item.fileName}`), job = await response.json();
+      if (!response.ok) throw new Error(job.error || "Không lưu được bộ tập");
+      item.jobId = job.id; item.name = job.name; item.logCount = 0; item.progress = Math.max(2, Number(job.progress || 0)); batchLog(`Đã lưu bộ tập ${job.id}. Backend sẽ ghép video đúng thứ tự timestamps.`);
+    } else {
     const form = new FormData(); form.append("voice", item.file); if (item.subtitleFile) form.append("subtitle", item.subtitleFile);
     let uploadIndex = 0;
     const assetSpecs = assets.map((asset) => { if (asset.file) { const index = uploadIndex++; form.append("media", asset.file); return { name:asset.name, type:asset.type, uploadIndex:index }; } return { name:asset.name, type:asset.type, localPath:asset.localPath, uploadIndex:null }; });
@@ -808,6 +828,7 @@ async function processBatchItem(item) {
     form.append("assets", JSON.stringify(assetSpecs)); form.append("settings", JSON.stringify(effectSettings())); form.append("selectionMode", $("#mediaSelectionMode").value); form.append("profileId", activeProfile); form.append("startedAt", item.startedAt || new Date().toISOString());
     const response = await fetchWithRetry("/api/jobs", { method:"POST", body:form }, `lưu job ${item.file.name}`), job = await response.json();
     if (!response.ok) throw new Error(job.error || "Không lưu được job"); item.jobId = job.id; item.fileName = job.name; item.logCount = 0; item.progress = Math.max(2, Number(job.progress || 0)); batchLog(`Đã lưu job ${job.id}. Backend sẽ tự tiếp tục nếu khởi động lại.`);
+    }
   } else if (item.serverStatus === "failed") {
     const response = await fetch(`/api/jobs/${item.jobId}/retry`, { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ startedAt:item.startedAt || new Date().toISOString() }) }); if (!response.ok) throw new Error("Không thể tiếp tục job lỗi."); item.logCount = 0;
   }

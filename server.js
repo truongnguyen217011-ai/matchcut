@@ -435,6 +435,30 @@ function createAss(scenes, settings) {
 }
 const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+const episodeVideoExtensions = new Set([".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+const episodeAudioExtensions = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
+const naturalNameCollator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+
+async function discoverEpisodeBundle(audioPath) {
+  const voicePath = path.resolve(String(audioPath || "").trim()), extension = path.extname(voicePath).toLowerCase();
+  if (!episodeAudioExtensions.has(extension)) throw new Error(`Không hỗ trợ file âm thanh ${path.basename(voicePath)}.`);
+  const voiceInfo = await stat(voicePath);
+  if (!voiceInfo.isFile()) throw new Error(`${voicePath} không phải file âm thanh.`);
+  const parent = path.dirname(voicePath), baseName = path.basename(voicePath, path.extname(voicePath));
+  const entries = await readdir(parent, { withFileTypes: true });
+  const timestampEntry = entries.find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && path.basename(entry.name, path.extname(entry.name)).toLocaleLowerCase() === baseName.toLocaleLowerCase());
+  const folderEntry = entries.find((entry) => entry.isDirectory() && entry.name.toLocaleLowerCase() === baseName.toLocaleLowerCase());
+  if (!timestampEntry) throw new Error(`Thiếu ${baseName}.txt hoặc ${baseName}.srt nằm cạnh file âm thanh.`);
+  if (!folderEntry) throw new Error(`Thiếu thư mục video ${baseName} nằm cạnh file âm thanh.`);
+  const videoFolder = path.join(parent, folderEntry.name);
+  const videos = (await readdir(videoFolder, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && episodeVideoExtensions.has(path.extname(entry.name).toLowerCase()))
+    .sort((a, b) => naturalNameCollator.compare(a.name, b.name))
+    .map((entry) => ({ name: entry.name, localPath: path.join(videoFolder, entry.name), type: "video", uploadIndex: null }));
+  if (!videos.length) throw new Error(`Thư mục ${baseName} không có video được hỗ trợ.`);
+  for (const video of videos) allowedLocalMedia.add(path.resolve(video.localPath));
+  return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), videoFolder, videos };
+}
 const lastOverlaySelections = new Map();
 async function findOverlayImages(folder) {
   const results = [], pending = [path.resolve(folder)];
@@ -683,6 +707,21 @@ app.post("/api/pick-folder", async (_req, res) => {
     res.json({ ok: true, folder: folder || null });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Không mở được cửa sổ chọn folder." });
+  }
+});
+app.post("/api/pick-episodes", async (_req, res) => {
+  try {
+    const script = "Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Width=1; $owner.Height=1; $owner.StartPosition='CenterScreen'; $owner.Show(); $owner.Activate(); $dialog=New-Object System.Windows.Forms.OpenFileDialog; $dialog.Title='Chọn file âm thanh của tập'; $dialog.Filter='Âm thanh|*.mp3;*.wav;*.m4a;*.aac;*.flac;*.ogg'; $dialog.Multiselect=$true; $result=$dialog.ShowDialog($owner); $owner.Close(); [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; if($result -eq [System.Windows.Forms.DialogResult]::OK){$dialog.FileNames | ConvertTo-Json -Compress}";
+    const output = await runCapture("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", script]);
+    if (!output) return res.json({ ok: true, bundles: [] });
+    const selected = JSON.parse(output), audioPaths = Array.isArray(selected) ? selected : [selected], bundles = [], errors = [];
+    for (const audioPath of audioPaths) {
+      try { bundles.push(await discoverEpisodeBundle(audioPath)); }
+      catch (error) { errors.push({ audioPath, error: error instanceof Error ? error.message : String(error) }); }
+    }
+    res.json({ ok: true, bundles, errors });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : "Không thể chọn bộ tập tự động." });
   }
 });
 app.post("/api/media-folders", async (req, res) => {
@@ -1118,7 +1157,7 @@ async function loadPersistentJobs() {
 function chooseJobAssets(assets, count, mode) {
   const candidates = assets.map((_, index) => index), result = [], bag = [];
   if (!candidates.length) return result;
-  if (mode === "sequential") return Array.from({ length: count }, (_, index) => candidates[index % candidates.length]);
+  if (mode === "sequential" || mode === "episode-sequential") return Array.from({ length: count }, (_, index) => candidates[index % candidates.length]);
   while (result.length < count) {
     if (mode === "random") result.push(candidates[Math.floor(Math.random() * candidates.length)]);
     else {
@@ -1174,12 +1213,12 @@ async function processPersistentJob(job) {
   try {
     job.error = null;
     if (!job.transcript?.chunks?.length && job.files.subtitle?.path) {
-      job.status = "transcribing"; job.stage = "Đọc phụ đề SRT"; job.progress = 20;
-      addJobLog(job, `Đang đọc SRT cùng tên: ${job.files.subtitle.originalName}`); await savePersistentJob(job);
+      job.status = "transcribing"; job.stage = "Đọc file timestamps"; job.progress = 20;
+      addJobLog(job, `Đang đọc file timestamps cùng tên: ${job.files.subtitle.originalName}`); await savePersistentJob(job);
       try {
         const chunks = parseSrt(await readFile(job.files.subtitle.path, "utf8"));
         job.transcript = { chunks, language: job.settings.language || "auto", source: "srt" };
-        job.progress = 55; addJobLog(job, `Đã dùng trực tiếp ${chunks.length} timestamp từ SRT; bỏ qua Whisper.`); await savePersistentJob(job);
+        job.progress = 55; addJobLog(job, `Đã dùng trực tiếp ${chunks.length} mốc từ file timestamps; bỏ qua Whisper.`); await savePersistentJob(job);
       } catch (error) {
         addJobLog(job, `SRT không hợp lệ (${error instanceof Error ? error.message : error}); tự chuyển sang Faster-Whisper.`);
         job.transcript = null; await savePersistentJob(job);
@@ -1224,7 +1263,7 @@ async function processPersistentJob(job) {
       const end = Number.isFinite(nextStart) ? nextStart : voiceDuration;
       return { start, end: Math.max(start + 0.05, end), text: chunk.text, mediaIndex: asset.uploadedPath ? asset.uploadIndex : null, mediaPath: asset.localPath || null, mediaType: asset.type };
     });
-    const scenes = job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
+    const scenes = job.selectionMode === "episode-sequential" ? captionScenes : job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
     renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("captionScenes", JSON.stringify(captionScenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1"); renderForm.append("jobId", job.id);
     addJobLog(job, `Render nhanh ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng NVDEC/CUDA → filter giữ nguyên hiệu ứng → NVENC.`); await savePersistentJob(job);
     const renderHeartbeat = setInterval(() => {
@@ -1253,6 +1292,33 @@ async function pumpPersistentJobs() {
   } finally { persistentWorkerRunning = false; }
 }
 const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "subtitle", maxCount: 1 }, { name: "media", maxCount: 100 }, { name: "intro", maxCount: 1 }, { name: "outro", maxCount: 1 }, { name: "overlay", maxCount: 1 }, { name: "watermark", maxCount: 1 }, { name: "music", maxCount: 1 }]);
+app.post("/api/jobs/from-episode", async (req, res) => {
+  const id = crypto.randomUUID(), dir = path.join(persistentRoot, id), inputs = path.join(dir, "inputs");
+  try {
+    const bundle = await discoverEpisodeBundle(req.body?.audioPath);
+    await mkdir(inputs, { recursive: true });
+    const copyRecord = async (source, field, originalName = path.basename(source)) => {
+      const info = await stat(source), destination = path.join(inputs, `${field}-${crypto.randomUUID()}${path.extname(source)}`);
+      await copyFile(source, destination);
+      return { path: destination, originalName, size: info.size };
+    };
+    const files = {
+      voice: await copyRecord(bundle.audioPath, "voice"),
+      subtitle: await copyRecord(bundle.timestampPath, "subtitle"),
+    };
+    const profileAssets = await resolveProfileAssetFiles(req.body?.profileId);
+    for (const field of profileAssetFields) if (profileAssets[field]?.[0]) files[field] = await copyRecord(profileAssets[field][0].path, field, profileAssets[field][0].originalname);
+    const settings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : {};
+    const now = new Date().toISOString(), requestedStart = Date.parse(req.body?.startedAt), startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now;
+    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.videos, settings, selectionMode:"episode-sequential", transcript:null, output:null };
+    addJobLog(job, `Đã tự nhận ${path.basename(bundle.timestampPath)} và ${bundle.videos.length} video theo thứ tự trong thư mục ${bundle.baseName}.`);
+    persistentJobs.set(id, job); await savePersistentJob(job);
+    res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
+  } catch (error) {
+    await rm(dir, { recursive:true, force:true });
+    res.status(400).json({ error:error instanceof Error ? error.message : String(error) });
+  }
+});
 app.post("/api/jobs", jobUpload, async (req, res) => {
   const voice = req.files?.voice?.[0];
   if (!voice) return res.status(400).json({ error: "Chưa có file voice." });
