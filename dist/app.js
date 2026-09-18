@@ -54,6 +54,8 @@ function effectSettings() {
     poolMode: $("#poolMode").checked,
     imageMotionEnabled: $("#imageMotionEnabled").checked,
     imageMotionStrength: Number($("#imageMotionStrength").value),
+    videoEffect: $("#videoEffect").value,
+    videoEffectIntensity: Number($("#videoEffectIntensity").value),
     fontBold: $("#fontBold").checked,
     fontItalic: $("#fontItalic").checked,
     outlineSize: Number($("#outlineSize").value),
@@ -69,20 +71,8 @@ function effectSettings() {
     voiceVolume: Number($("#voiceVolume").value),
     voiceDelay: Number($("#voiceDelay").value),
     musicVolume: Number($("#musicVolume").value),
-    waveformEnabled: $("#waveformEnabled").checked,
-    waveformStyle: $("#waveformStyle").value,
-    waveformColor: $("#waveformColor").value,
-    waveformOpacity: Number($("#waveformOpacity").value),
-    waveformY: Number($("#waveformY").value),
-    voiceWaveformEnabled: $("#voiceWaveformEnabled").checked,
-    voiceWaveformColor: $("#voiceWaveformColor").value,
-    voiceWaveformOpacity: Number($("#voiceWaveformOpacity").value),
-    voiceWaveformY: Number($("#voiceWaveformY").value),
-    waveformX: Number($("#waveformX").value),
-    voiceWaveformX: Number($("#voiceWaveformX").value),
-    waveformWidth: Number($("#waveformWidth").value),
-    waveformHeight: Number($("#waveformHeight").value),
-    waveformThickness: Number($("#waveformThickness").value),
+    waveformEnabled: false,
+    voiceWaveformEnabled: false,
     persistentTitle: $("#persistentTitle").checked,
     titleLine1: $("#titleLine1").value,
     titleLine2: $("#titleLine2").value,
@@ -106,7 +96,7 @@ function applyCaptionStyle() {
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
   $("#subtitleBgValue").textContent = `${s.subtitleBg}%`;
   $("#imageMotionStrengthValue").textContent = `${s.imageMotionStrength}%`;
-  updateWaveformPreview(s);
+  $("#videoEffectIntensityValue").textContent = `${s.videoEffectIntensity}%`;
   canvas.querySelectorAll(":scope > img,:scope > video").forEach((media) => media.style.filter = `brightness(${100 - s.backgroundDarkness}%)`);
   $("#positionStage").style.setProperty("--preview-darkness", String(s.backgroundDarkness / 100));
   updatePositionPreview(s);
@@ -175,15 +165,6 @@ document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((con
   control.addEventListener("input", applyCaptionStyle),
 );
 $("#captionBackgroundGallery").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { $("#captionBackgroundStyle").value = button.dataset.captionBg; applyCaptionStyle(); }));
-function updateWaveformPreview(s = effectSettings()) {
-  $("#waveformYValue").textContent = `${s.waveformY}%`; $("#voiceWaveformYValue").textContent = `${s.voiceWaveformY}%`; $("#waveformXValue").textContent = `${s.waveformX}%`; $("#voiceWaveformXValue").textContent = `${s.voiceWaveformX}%`; $("#waveformOpacityValue").textContent = `${s.waveformOpacity}%`; $("#voiceWaveformOpacityValue").textContent = `${s.voiceWaveformOpacity}%`; $("#waveformWidthValue").textContent = `${s.waveformWidth}%`; $("#waveformHeightValue").textContent = `${s.waveformHeight}px`; $("#waveformThicknessValue").textContent = `${s.waveformThickness}px`;
-  for (const [element,enabled,color,opacity,x,y] of [[$("#musicWavePreview"),s.waveformEnabled,s.waveformColor,s.waveformOpacity,s.waveformX,s.waveformY],[$("#voiceWavePreview"),s.voiceWaveformEnabled,s.voiceWaveformColor,s.voiceWaveformOpacity,s.voiceWaveformX,s.voiceWaveformY]]) { element.style.display = enabled ? "block" : "none"; element.style.setProperty("--wave-color",color); element.classList.toggle("rainbow",s.waveformStyle === "rainbow"); element.style.opacity = String(opacity / 100); element.style.left = `${x}%`; element.style.top = `${y}%`; element.style.width = `${s.waveformWidth}%`; element.style.height = `${Math.max(8,s.waveformHeight / 7)}px`; element.style.filter = `drop-shadow(0 0 ${s.waveformThickness + 1}px ${s.waveformStyle === "rainbow" ? "#35e86f" : color})`; }
-}
-document.querySelectorAll("#waveformEnabled,#waveformStyle,#waveformColor,#waveformOpacity,#waveformY,#voiceWaveformEnabled,#voiceWaveformColor,#voiceWaveformOpacity,#voiceWaveformY,#waveformX,#voiceWaveformX,#waveformWidth,#waveformHeight,#waveformThickness").forEach((control) => control.addEventListener("input", applyCaptionStyle));
-const waveformPreview = $("#waveformPreview"); let draggedWave = null;
-function moveWave(event) { if (!draggedWave) return; const rect = waveformPreview.getBoundingClientRect(), x = Math.round(Math.max(5,Math.min(95,(event.clientX-rect.left)/rect.width*100))), y = Math.round(Math.max(5,Math.min(95,(event.clientY-rect.top)/rect.height*100))), prefix = draggedWave === "music" ? "waveform" : "voiceWaveform"; $("#"+prefix+"X").value=x; $("#"+prefix+"Y").value=y; applyCaptionStyle(); }
-waveformPreview.addEventListener("pointerdown", (event) => { draggedWave = event.target.dataset.wave || ($("#waveformEnabled").checked ? "music" : "voice"); waveformPreview.setPointerCapture(event.pointerId); moveWave(event); });
-waveformPreview.addEventListener("pointermove", (event) => { if (waveformPreview.hasPointerCapture(event.pointerId)) moveWave(event); }); waveformPreview.addEventListener("pointerup", () => { draggedWave=null; });
 const POSITION_PRESETS = {"top-left":[18,15],top:[50,15],"top-right":[82,15],"middle-left":[18,50],middle:[50,50],"middle-right":[82,50],"bottom-left":[18,85],bottom:[50,85],"bottom-right":[82,85]};
 function updatePositionPreview(s = effectSettings()) {
   $("#subtitleXValue").textContent = `${s.subtitleX}%`; $("#subtitleYValue").textContent = `${s.subtitleY}%`;
@@ -199,7 +180,7 @@ positionStage.addEventListener("pointermove", (event) => { if (positionStage.has
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
 const DRAFT_KEY = "matchcut.dialogueDrafts.v1";
 const PROFILE_ASSET_INPUTS = { music:"#musicInput" };
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","imageMotionEnabled","imageMotionStrength","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","imageMotionEnabled","imageMotionStrength","videoEffect","videoEffectIntensity","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","voiceVolume","voiceDelay","musicVolume","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 let dialogueDrafts = {};

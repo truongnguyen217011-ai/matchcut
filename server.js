@@ -30,6 +30,7 @@ import { fileMetadataMatches } from "./media-cache-utils.js";
 import { isValidCachedTranscript, transcriptCacheKey } from "./transcript-cache-utils.js";
 import { boundaryCacheKey } from "./boundary-cache-utils.js";
 import { findAlphaBounds, overlayCacheKey } from "./overlay-cache-utils.js";
+import { buildVideoEffectFilter } from "./video-effects.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -517,6 +518,8 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   let vf = preScaled ? `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS` : `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scaler},setsar=1,fps=30`;
   const darkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
   if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
+  const videoEffect = buildVideoEffectFilter(settings.videoEffect, settings.videoEffectIntensity);
+  if (videoEffect) vf += `,${videoEffect}`;
   const simpleTransition = ["none", "fade", "cinematic-fade", "flash"].includes(transition);
   if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && simpleTransition) {
     const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
@@ -865,6 +868,8 @@ app.post(
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
         const backgroundDarkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
         if (backgroundDarkness > 0) vf += `,eq=brightness=${(-backgroundDarkness / 100).toFixed(2)}`;
+        const videoEffect = buildVideoEffectFilter(settings.videoEffect, settings.videoEffectIntensity);
+        if (videoEffect) vf += `,${videoEffect}`;
         if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && ["none", "fade", "cinematic-fade", "flash"].includes(transition)) {
           const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
           const frames = Math.max(15, Math.ceil(duration * 30)), progress = `min(on/${frames},1)`, direction = Math.abs(Number(scene.motionIndex) || 0) % 4;
