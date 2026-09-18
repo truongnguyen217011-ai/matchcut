@@ -10,11 +10,11 @@
   <link rel="stylesheet" href="./draft-tools.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v6.9</span></div></div><div class="status"><i></i>NVDEC · CUDA Scale · Full Effects · NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v7.0</span></div></div><div class="status"><i></i>Ảnh tuần tự · Keyframe · NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
-      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chọn file âm thanh để tool tự tìm timestamps và thư mục video cùng tên.</div></div><div class="batch-actions"><button id="pickEpisodes" class="batch-add" type="button">⚡ Tự tìm video theo tập</button><label class="batch-add"><input id="voiceInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.srt,.txt,application/x-subrip,text/plain" multiple>＋ Thêm voice + timestamps</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
+      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chọn voice để tự tìm SRT và thư mục ảnh cùng tên.</div></div><div class="batch-actions"><button id="pickEpisodes" class="batch-add" type="button">Tự tìm ảnh theo tập</button><label class="batch-add"><input id="voiceInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.srt,.txt,application/x-subrip,text/plain" multiple>＋ Thêm voice + SRT</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
       <div class="batch-progress"><div class="progress-title">Tiến trình tự động <span id="batchCounter">0/0</span></div><div id="currentJobProgress" class="current-job-progress idle"><div class="current-job-top"><span id="currentJobPosition">Chưa chạy</span><strong id="currentJobPercent">0%</strong></div><div id="currentJobName">Chưa có video đang xử lý</div><div class="current-job-track"><i id="currentJobBar"></i></div><small id="currentJobStage">Sẵn sàng nhận hàng đợi</small><div class="current-job-times"><span>Bắt đầu <b id="currentJobStarted">--:--:--</b></span><span id="currentJobEndLabel">Đã chạy <b id="currentJobElapsed">0 phút</b></span></div></div><pre id="batchLog">Sẵn sàng. Thiết lập kênh và footage, sau đó thêm voice để xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
     </div>
   </section>
@@ -51,6 +51,7 @@
             <option value="lv">Tiếng Latvia (Latviešu)</option><option value="lt">Tiếng Litva (Lietuvių)</option>
           </select></label>
           <label class="check wide"><input id="poolMode" type="checkbox"> Pool Mode — xoay vòng tư liệu</label>
+          <label class="check"><input id="imageMotionEnabled" type="checkbox" checked> Chuyển động nhân vật trên ảnh</label><label>Mức chuyển động <output id="imageMotionStrengthValue">6%</output><input id="imageMotionStrength" type="range" min="2" max="15" value="6"></label>
         </div></fieldset>
         <fieldset><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">
           <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Roboto</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Oswald</option><option>Bebas Neue</option><option>Archivo Black</option><option>Barlow Condensed</option><option>Nunito</option><option>Noto Sans</option><option>Playfair Display</option><option>Lora</option><option>Georgia</option></select></label>
@@ -72,14 +73,6 @@
           <label class="wide">Giảm tối nền video <output id="backgroundDarknessValue">0%</output><input id="backgroundDarkness" type="range" min="0" max="90" step="5" value="0"></label>
           <label>Số từ/cụm<input id="wordsPerCaption" type="number" min="1" max="20" value="8"></label><label>Số dòng tối đa<input id="maxLines" type="number" min="1" max="4" value="2"></label>
           <label>Giãn chữ<input id="letterSpacing" type="number" min="0" max="20" value="1"></label><label>Viền phụ<input id="secondaryOutline" type="color" value="#000000"></label>
-        </div></fieldset>
-        <fieldset><legend>Intro · Outro · Lớp phủ</legend><div class="file-grid">
-          <label>Video Intro<input id="introInput" type="file" accept="video/*"></label><label>Video Outro<input id="outroInput" type="file" accept="video/*"></label>
-          <label>Overlay / Subscribe<input id="overlayInput" type="file" accept="video/*"></label><label>Watermark PNG<input id="watermarkInput" type="file" accept="image/png"></label>
-          <label>Thời điểm overlay<select id="profileOverlayMode"><option value="full">Suốt video</option><option value="start-end">Đầu và cuối video</option><option value="interval">Lặp theo khoảng thời gian</option></select></label><label>Thời lượng mỗi lần (giây)<input id="profileOverlayDuration" type="number" min="1" max="300" value="5"></label><label>Khoảng lặp (phút)<input id="profileOverlayInterval" type="number" min="0.1" max="120" step="0.1" value="1"></label>
-          <label class="check"><input id="chromaKey" type="checkbox"> Xóa phông xanh overlay</label><label>Độ trong watermark<input id="watermarkOpacity" type="range" min="0" max="100" value="70"></label>
-          <label class="check"><input id="watermarkRotate" type="checkbox"> Tự động xoay Watermark PNG</label><label>Tốc độ xoay <output id="watermarkRotationSpeedValue">12°/giây</output><input id="watermarkRotationSpeed" type="range" min="1" max="45" value="12"></label>
-          <div class="overlay-library wide"><label class="check"><input id="overlayImageEnabled" type="checkbox"> Bật kho ảnh lớp phủ tự động</label><label class="wide">Folder ảnh lớp phủ PNG/WebP<div class="path-picker"><input id="overlayImageFolder" readonly placeholder="Chưa chọn folder lớp phủ"><button id="pickOverlayImageFolder" type="button">Chọn folder</button></div></label><label>Độ đậm lớp phủ <output id="overlayImageOpacityValue">70%</output><input id="overlayImageOpacity" type="range" min="5" max="100" value="70"></label><div id="overlayImageStatus">Mỗi video sẽ tự chọn ngẫu nhiên một ảnh lớp phủ khác trong folder.</div></div>
         </div></fieldset>
         <fieldset><legend>Âm thanh & sóng nhạc</legend><div class="file-grid">
           <label>Âm lượng voice<input id="voiceVolume" type="range" min="0" max="200" value="100"></label><label>Trễ voice (giây)<input id="voiceDelay" type="number" min="0" step="0.1" value="0"></label>

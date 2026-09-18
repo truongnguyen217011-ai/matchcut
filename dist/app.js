@@ -52,6 +52,8 @@ function effectSettings() {
     aspectRatio: $("#aspectRatio").value,
     language: $("#language").value,
     poolMode: $("#poolMode").checked,
+    imageMotionEnabled: $("#imageMotionEnabled").checked,
+    imageMotionStrength: Number($("#imageMotionStrength").value),
     fontBold: $("#fontBold").checked,
     fontItalic: $("#fontItalic").checked,
     outlineSize: Number($("#outlineSize").value),
@@ -63,16 +65,7 @@ function effectSettings() {
     maxLines: Number($("#maxLines").value),
     letterSpacing: Number($("#letterSpacing").value),
     secondaryOutline: $("#secondaryOutline").value,
-    chromaKey: $("#chromaKey").checked,
-    watermarkOpacity: Number($("#watermarkOpacity").value),
-    watermarkRotate: $("#watermarkRotate").checked,
-    watermarkRotationSpeed: Number($("#watermarkRotationSpeed").value),
-    overlayImageEnabled: $("#overlayImageEnabled").checked,
-    overlayImageFolder: $("#overlayImageFolder").value,
-    overlayImageOpacity: Number($("#overlayImageOpacity").value),
-    profileOverlayMode: $("#profileOverlayMode").value,
-    profileOverlayDuration: Number($("#profileOverlayDuration").value),
-    profileOverlayInterval: Number($("#profileOverlayInterval").value),
+    overlayImageEnabled: false,
     voiceVolume: Number($("#voiceVolume").value),
     voiceDelay: Number($("#voiceDelay").value),
     musicVolume: Number($("#musicVolume").value),
@@ -112,8 +105,7 @@ function applyCaptionStyle() {
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
   $("#subtitleBgValue").textContent = `${s.subtitleBg}%`;
-  $("#watermarkRotationSpeedValue").textContent = `${s.watermarkRotationSpeed}°/giây`;
-  $("#overlayImageOpacityValue").textContent = `${s.overlayImageOpacity}%`;
+  $("#imageMotionStrengthValue").textContent = `${s.imageMotionStrength}%`;
   updateWaveformPreview(s);
   canvas.querySelectorAll(":scope > img,:scope > video").forEach((media) => media.style.filter = `brightness(${100 - s.backgroundDarkness}%)`);
   $("#positionStage").style.setProperty("--preview-darkness", String(s.backgroundDarkness / 100));
@@ -182,8 +174,6 @@ function updateEffectInspector(s = effectSettings()) {
 document.querySelectorAll(".effect-grid input,.effect-grid select").forEach((control) =>
   control.addEventListener("input", applyCaptionStyle),
 );
-$("#watermarkRotationSpeed").addEventListener("input", applyCaptionStyle);
-$("#overlayImageOpacity").addEventListener("input", applyCaptionStyle);
 $("#captionBackgroundGallery").querySelectorAll("button").forEach((button) => button.addEventListener("click", () => { $("#captionBackgroundStyle").value = button.dataset.captionBg; applyCaptionStyle(); }));
 function updateWaveformPreview(s = effectSettings()) {
   $("#waveformYValue").textContent = `${s.waveformY}%`; $("#voiceWaveformYValue").textContent = `${s.voiceWaveformY}%`; $("#waveformXValue").textContent = `${s.waveformX}%`; $("#voiceWaveformXValue").textContent = `${s.voiceWaveformX}%`; $("#waveformOpacityValue").textContent = `${s.waveformOpacity}%`; $("#voiceWaveformOpacityValue").textContent = `${s.voiceWaveformOpacity}%`; $("#waveformWidthValue").textContent = `${s.waveformWidth}%`; $("#waveformHeightValue").textContent = `${s.waveformHeight}px`; $("#waveformThicknessValue").textContent = `${s.waveformThickness}px`;
@@ -208,9 +198,8 @@ positionStage.addEventListener("pointerdown", (event) => { positionStage.setPoin
 positionStage.addEventListener("pointermove", (event) => { if (positionStage.hasPointerCapture(event.pointerId)) moveSubtitle(event); });
 const PROFILE_KEY = "matchcut.channelProfiles.v2";
 const DRAFT_KEY = "matchcut.dialogueDrafts.v1";
-const PROFILE_ASSET_INPUTS = { intro:"#introInput", outro:"#outroInput", overlay:"#overlayInput", watermark:"#watermarkInput", music:"#musicInput" };
-const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","chromaKey","watermarkOpacity","watermarkRotate","watermarkRotationSpeed","overlayImageEnabled","overlayImageFolder","overlayImageOpacity","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
-PROFILE_FIELDS.push("profileOverlayMode", "profileOverlayDuration", "profileOverlayInterval");
+const PROFILE_ASSET_INPUTS = { music:"#musicInput" };
+const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","imageMotionEnabled","imageMotionStrength","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","voiceVolume","voiceDelay","musicVolume","waveformEnabled","waveformStyle","waveformColor","waveformOpacity","waveformY","voiceWaveformEnabled","voiceWaveformColor","voiceWaveformOpacity","voiceWaveformY","waveformX","voiceWaveformX","waveformWidth","waveformHeight","waveformThickness","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
 let dialogueDrafts = {};
@@ -427,15 +416,6 @@ $("#pickFolder").onclick = async () => {
     }
   } catch (error) { $("#folderList").textContent = `Lỗi: ${error.message}`; }
   finally { button.disabled = false; button.textContent = "▣ Chọn folder từ máy"; }
-};
-$("#pickOverlayImageFolder").onclick = async () => {
-  const button = $("#pickOverlayImageFolder"), status = $("#overlayImageStatus"); button.disabled = true; button.textContent = "Đang mở…"; status.textContent = "Hãy chọn folder chứa ảnh PNG/WebP trong cửa sổ Windows.";
-  try {
-    const response = await fetch("/api/pick-folder", { method: "POST" }), result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Không mở được cửa sổ chọn folder");
-    if (result.folder) { $("#overlayImageFolder").value = result.folder; $("#overlayImageEnabled").checked = true; status.textContent = `Đã chọn: ${result.folder}. Mỗi video sẽ lấy ngẫu nhiên một ảnh lớp phủ.`; }
-  } catch (error) { status.textContent = `Lỗi: ${error.message}`; }
-  finally { button.disabled = false; button.textContent = "Chọn folder"; }
 };
 match.onclick = async () => {
   if (!ready()) {
@@ -704,7 +684,7 @@ async function renderVideo() {
   const form = new FormData();
   form.append("voice", activeVoiceFile);
   const compact = appendUsedMedia(form, scenes);
-  for (const [field, id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) {
+  for (const [field, id] of [["music","#musicInput"]]) {
     const file = $(id).files[0];
     if (file) form.append(field, file);
   }
@@ -773,7 +753,7 @@ function renderCurrentJobProgress() {
 }
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.videoCount} video theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.videoFolder ? `<small class="job-output">${safeHtml(item.videoFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn file âm thanh để tự tìm timestamps và video cùng tên.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.imageCount} ảnh theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.imageFolder ? `<small class="job-output">${safeHtml(item.imageFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn file âm thanh để tự tìm SRT và thư mục ảnh cùng tên.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons(); renderCurrentJobProgress();
@@ -789,13 +769,13 @@ $("#pickEpisodes").onclick = async () => {
     if (!response.ok) throw new Error(result.error || "Không thể tìm bộ tập.");
     for (const bundle of result.bundles || []) {
       if (batchFiles.some((item) => item.localEpisode && item.audioPath === bundle.audioPath)) continue;
-      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, videoFolder:bundle.videoFolder, videoCount:bundle.videos.length, selected:true, status:"Sẵn sàng", stage:"Đã nhận đúng bộ tập", progress:0 });
-      batchLog(`✓ ${bundle.baseName}: đã tìm ${bundle.videos.length} video và ${bundle.timestampPath.split(/[\\/]/).at(-1)}.`);
+      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, imageFolder:bundle.imageFolder, imageCount:bundle.images.length, selected:true, status:"Sẵn sàng", stage:"Đã nhận đúng bộ tập", progress:0 });
+      batchLog(`✓ ${bundle.baseName}: đã tìm ${bundle.images.length} ảnh theo thứ tự và ${bundle.timestampPath.split(/[\\/]/).at(-1)}.`);
     }
     for (const failure of result.errors || []) batchLog(`✕ ${failure.audioPath}: ${failure.error}`);
     renderBatchList();
   } catch (error) { batchLog(`Không thể tự tìm bộ tập: ${error.message}`); }
-  finally { button.disabled = false; button.textContent = "⚡ Tự tìm video theo tập"; }
+  finally { button.disabled = false; button.textContent = "Tự tìm ảnh theo tập"; }
 };
 $("#clearBatch").onclick = async () => {
   if (batchRunning) return;
@@ -817,14 +797,16 @@ async function processBatchItem(item) {
   if (!item.jobId) {
     item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; item.progress = 1; renderBatchList();
     if (item.localEpisode) {
-      const response = await fetchWithRetry("/api/jobs/from-episode", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ audioPath:item.audioPath, settings:effectSettings(), profileId:activeProfile, startedAt:item.startedAt || new Date().toISOString() }) }, `lưu bộ tập ${item.fileName}`), job = await response.json();
+      const episodeForm = new FormData(); episodeForm.append("audioPath", item.audioPath); episodeForm.append("settings", JSON.stringify(effectSettings())); episodeForm.append("profileId", activeProfile); episodeForm.append("startedAt", item.startedAt || new Date().toISOString());
+      const music = $("#musicInput").files[0]; if (music) episodeForm.append("music", music);
+      const response = await fetchWithRetry("/api/jobs/from-episode", { method:"POST", body:episodeForm }, `lưu bộ tập ${item.fileName}`), job = await response.json();
       if (!response.ok) throw new Error(job.error || "Không lưu được bộ tập");
       item.jobId = job.id; item.name = job.name; item.logCount = 0; item.progress = Math.max(2, Number(job.progress || 0)); batchLog(`Đã lưu bộ tập ${job.id}. Backend sẽ ghép video đúng thứ tự timestamps.`);
     } else {
     const form = new FormData(); form.append("voice", item.file); if (item.subtitleFile) form.append("subtitle", item.subtitleFile);
     let uploadIndex = 0;
     const assetSpecs = assets.map((asset) => { if (asset.file) { const index = uploadIndex++; form.append("media", asset.file); return { name:asset.name, type:asset.type, uploadIndex:index }; } return { name:asset.name, type:asset.type, localPath:asset.localPath, uploadIndex:null }; });
-    for (const [field,id] of [["intro","#introInput"],["outro","#outroInput"],["overlay","#overlayInput"],["watermark","#watermarkInput"],["music","#musicInput"]]) { const file = $(id).files[0]; if (file) form.append(field,file); }
+    for (const [field,id] of [["music","#musicInput"]]) { const file = $(id).files[0]; if (file) form.append(field,file); }
     form.append("assets", JSON.stringify(assetSpecs)); form.append("settings", JSON.stringify(effectSettings())); form.append("selectionMode", $("#mediaSelectionMode").value); form.append("profileId", activeProfile); form.append("startedAt", item.startedAt || new Date().toISOString());
     const response = await fetchWithRetry("/api/jobs", { method:"POST", body:form }, `lưu job ${item.file.name}`), job = await response.json();
     if (!response.ok) throw new Error(job.error || "Không lưu được job"); item.jobId = job.id; item.fileName = job.name; item.logCount = 0; item.progress = Math.max(2, Number(job.progress || 0)); batchLog(`Đã lưu job ${job.id}. Backend sẽ tự tiếp tục nếu khởi động lại.`);

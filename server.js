@@ -67,7 +67,7 @@ app.use(
   }),
 );
 let whisperPromise;
-const profileAssetFields = ["intro", "outro", "overlay", "watermark", "music"];
+const profileAssetFields = ["music"];
 function safeProfileId(value) { const id = String(value || ""); if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Mã kênh không hợp lệ."); return id; }
 async function readProfileAssetManifest(profileId) { try { return JSON.parse(await readFile(path.join(profileAssetsRoot, safeProfileId(profileId), "manifest.json"), "utf8")); } catch { return {}; } }
 async function resolveProfileAssetFiles(profileId) {
@@ -435,7 +435,7 @@ function createAss(scenes, settings) {
 }
 const allowedLocalMedia = new Set();
 const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
-const episodeVideoExtensions = new Set([".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+const episodeImageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp"]);
 const episodeAudioExtensions = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
 const naturalNameCollator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
 
@@ -450,14 +450,14 @@ async function discoverEpisodeBundle(audioPath) {
   const folderEntry = entries.find((entry) => entry.isDirectory() && entry.name.toLocaleLowerCase() === baseName.toLocaleLowerCase());
   if (!timestampEntry) throw new Error(`Thiếu ${baseName}.txt hoặc ${baseName}.srt nằm cạnh file âm thanh.`);
   if (!folderEntry) throw new Error(`Thiếu thư mục video ${baseName} nằm cạnh file âm thanh.`);
-  const videoFolder = path.join(parent, folderEntry.name);
-  const videos = (await readdir(videoFolder, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && episodeVideoExtensions.has(path.extname(entry.name).toLowerCase()))
+  const imageFolder = path.join(parent, folderEntry.name);
+  const images = (await readdir(imageFolder, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && episodeImageExtensions.has(path.extname(entry.name).toLowerCase()))
     .sort((a, b) => naturalNameCollator.compare(a.name, b.name))
-    .map((entry) => ({ name: entry.name, localPath: path.join(videoFolder, entry.name), type: "video", uploadIndex: null }));
-  if (!videos.length) throw new Error(`Thư mục ${baseName} không có video được hỗ trợ.`);
-  for (const video of videos) allowedLocalMedia.add(path.resolve(video.localPath));
-  return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), videoFolder, videos };
+    .map((entry) => ({ name: entry.name, localPath: path.join(imageFolder, entry.name), type: "image", uploadIndex: null }));
+  if (!images.length) throw new Error(`Thư mục ${baseName} không có ảnh JPG, PNG, WebP hoặc BMP.`);
+  for (const image of images) allowedLocalMedia.add(path.resolve(image.localPath));
+  return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, images };
 }
 const lastOverlaySelections = new Map();
 async function findOverlayImages(folder) {
@@ -517,6 +517,15 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   let vf = preScaled ? `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS` : `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scaler},setsar=1,fps=30`;
   const darkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
   if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
+  const simpleTransition = ["none", "fade", "cinematic-fade", "flash"].includes(transition);
+  if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && simpleTransition) {
+    const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
+    const frames = Math.max(15, Math.ceil(duration * 30)), progress = `min(on/${frames},1)`;
+    const direction = Math.abs(Number(scene.motionIndex) || 0) % 4;
+    const x = direction === 0 ? `(iw-iw/zoom)*${progress}` : direction === 1 ? `(iw-iw/zoom)*(1-${progress})` : `(iw-iw/zoom)/2`;
+    const y = direction === 2 ? `(ih-ih/zoom)*${progress}` : direction === 3 ? `(ih-ih/zoom)*(1-${progress})` : `(ih-ih/zoom)/2`;
+    vf += `,zoompan=z='1+${strength.toFixed(4)}*${progress}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30`;
+  }
   if (transition === "fade") vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
   if (transition === "cinematic-fade") vf += `,eq=contrast=1.08:saturation=0.92,fade=t=in:st=0:d=${Math.min(0.7, duration / 3).toFixed(2)}:color=black`;
   if (transition === "zoom-in" && scene.mediaType === "image") vf += `,zoompan=z='min(zoom+0.0008,1.08)':d=1:s=${width}x${height}:fps=30`;
@@ -856,6 +865,13 @@ app.post(
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
         const backgroundDarkness = Math.min(90, Math.max(0, Number(settings.backgroundDarkness) || 0));
         if (backgroundDarkness > 0) vf += `,eq=brightness=${(-backgroundDarkness / 100).toFixed(2)}`;
+        if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && ["none", "fade", "cinematic-fade", "flash"].includes(transition)) {
+          const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
+          const frames = Math.max(15, Math.ceil(duration * 30)), progress = `min(on/${frames},1)`, direction = Math.abs(Number(scene.motionIndex) || 0) % 4;
+          const x = direction === 0 ? `(iw-iw/zoom)*${progress}` : direction === 1 ? `(iw-iw/zoom)*(1-${progress})` : `(iw-iw/zoom)/2`;
+          const y = direction === 2 ? `(ih-ih/zoom)*${progress}` : direction === 3 ? `(ih-ih/zoom)*(1-${progress})` : `(ih-ih/zoom)/2`;
+          vf += `,zoompan=z='1+${strength.toFixed(4)}*${progress}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30`;
+        }
         if (transition === "fade")
           vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
         if (transition === "cinematic-fade")
@@ -1263,9 +1279,19 @@ async function processPersistentJob(job) {
       const end = Number.isFinite(nextStart) ? nextStart : voiceDuration;
       return { start, end: Math.max(start + 0.05, end), text: chunk.text, mediaIndex: asset.uploadedPath ? asset.uploadIndex : null, mediaPath: asset.localPath || null, mediaType: asset.type };
     });
-    const scenes = job.selectionMode === "episode-sequential" ? captionScenes : job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
+    const scenes = job.selectionMode === "episode-sequential"
+      ? job.assets.map((asset, index) => ({
+          start: voiceDuration * index / job.assets.length,
+          end: voiceDuration * (index + 1) / job.assets.length,
+          text: "",
+          mediaIndex: asset.uploadedPath ? asset.uploadIndex : null,
+          mediaPath: asset.localPath || null,
+          mediaType: "image",
+          motionIndex: index,
+        }))
+      : job.settings.fastRender ? compactVisualScenes(captionScenes, 96) : captionScenes;
     renderForm.append("scenes", JSON.stringify(scenes)); renderForm.append("captionScenes", JSON.stringify(captionScenes)); renderForm.append("settings", JSON.stringify(job.settings)); renderForm.append("persistentJob", "1"); renderForm.append("jobId", job.id);
-    addJobLog(job, `Render nhanh ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng NVDEC/CUDA → filter giữ nguyên hiệu ứng → NVENC.`); await savePersistentJob(job);
+    addJobLog(job, `${job.selectionMode === "episode-sequential" ? "Ghép tuần tự" : "Render nhanh"} ${scenes.length} cảnh hình và ${captionScenes.length} cue phụ đề bằng NVDEC/CUDA → filter giữ nguyên hiệu ứng → NVENC.`); await savePersistentJob(job);
     const renderHeartbeat = setInterval(() => {
       if (job.status !== "rendering") return;
       job.updatedAt = new Date().toISOString();
@@ -1292,7 +1318,7 @@ async function pumpPersistentJobs() {
   } finally { persistentWorkerRunning = false; }
 }
 const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "subtitle", maxCount: 1 }, { name: "media", maxCount: 100 }, { name: "intro", maxCount: 1 }, { name: "outro", maxCount: 1 }, { name: "overlay", maxCount: 1 }, { name: "watermark", maxCount: 1 }, { name: "music", maxCount: 1 }]);
-app.post("/api/jobs/from-episode", async (req, res) => {
+app.post("/api/jobs/from-episode", upload.single("music"), async (req, res) => {
   const id = crypto.randomUUID(), dir = path.join(persistentRoot, id), inputs = path.join(dir, "inputs");
   try {
     const bundle = await discoverEpisodeBundle(req.body?.audioPath);
@@ -1306,12 +1332,19 @@ app.post("/api/jobs/from-episode", async (req, res) => {
       voice: await copyRecord(bundle.audioPath, "voice"),
       subtitle: await copyRecord(bundle.timestampPath, "subtitle"),
     };
-    const profileAssets = await resolveProfileAssetFiles(req.body?.profileId);
-    for (const field of profileAssetFields) if (profileAssets[field]?.[0]) files[field] = await copyRecord(profileAssets[field][0].path, field, profileAssets[field][0].originalname);
-    const settings = req.body?.settings && typeof req.body.settings === "object" ? req.body.settings : {};
+    if (req.file) {
+      files.music = await copyRecord(req.file.path, "music", req.file.originalname);
+      await rm(req.file.path, { force:true });
+    }
+    else {
+      const profileAssets = await resolveProfileAssetFiles(req.body?.profileId);
+      if (profileAssets.music?.[0]) files.music = await copyRecord(profileAssets.music[0].path, "music", profileAssets.music[0].originalname);
+    }
+    const settings = typeof req.body?.settings === "string" ? JSON.parse(req.body.settings || "{}") : req.body?.settings || {};
     const now = new Date().toISOString(), requestedStart = Date.parse(req.body?.startedAt), startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now;
-    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.videos, settings, selectionMode:"episode-sequential", transcript:null, output:null };
-    addJobLog(job, `Đã tự nhận ${path.basename(bundle.timestampPath)} và ${bundle.videos.length} video theo thứ tự trong thư mục ${bundle.baseName}.`);
+    settings.overlayImageEnabled = false;
+    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.images, settings, selectionMode:"episode-sequential", transcript:null, output:null };
+    addJobLog(job, `Đã tự nhận ${path.basename(bundle.timestampPath)} và ${bundle.images.length} ảnh theo thứ tự trong thư mục ${bundle.baseName}${files.music ? "; có nhạc nền" : "; không có nhạc nền"}.`);
     persistentJobs.set(id, job); await savePersistentJob(job);
     res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
   } catch (error) {
