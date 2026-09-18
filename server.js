@@ -326,19 +326,21 @@ async function attachIntroOutro({ dir, content, files, width, height, fast, onPr
   await run(buildBoundaryConcatArgs(list, output, await preferredAacEncoder()));
   return output;
 }
-async function availableExportPath(originalName) {
+async function availableExportPath(originalName, destinationDirectory = exportRoot) {
   const base =
     path
       .parse(originalName || "MatchCut")
       .name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
       .replace(/[. ]+$/, "")
       .trim() || "MatchCut";
-  let candidate = path.join(exportRoot, `${base}.mp4`),
+  const outputDirectory = path.resolve(destinationDirectory || exportRoot);
+  await mkdir(outputDirectory, { recursive:true });
+  let candidate = path.join(outputDirectory, `${base}.mp4`),
     index = 2;
   while (true) {
     try {
       await stat(candidate);
-      candidate = path.join(exportRoot, `${base}-${index++}.mp4`);
+      candidate = path.join(outputDirectory, `${base}-${index++}.mp4`);
     } catch {
       return candidate;
     }
@@ -830,7 +832,8 @@ app.post(
           const renderOptions = { dir, files: req.files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, overlayImageX, overlayImageY, overlayImagePreScaled, onProgress };
           const singlePass = settings.fastRender !== false && scenes.length > 24 ? await renderChunkedSinglePass(renderOptions) : await renderSinglePass(renderOptions);
           singlePass.output = await attachIntroOutro({ dir, content: singlePass.segments || singlePass.output, files: req.files, width, height, fast: settings.fastRender !== false, onProgress });
-          const savedPath = await availableExportPath(voice.originalname);
+          const outputDirectory = req.body.jobId ? persistentJobs.get(req.body.jobId)?.outputDirectory : null;
+          const savedPath = await availableExportPath(voice.originalname, outputDirectory || exportRoot);
           await onProgress?.("Kiểm tra MP4 hoàn chỉnh", 98);
           const { publishMode, verificationMode } = await publishVerifiedOutput(singlePass.output, savedPath);
           return sendRenderResult({
@@ -1041,7 +1044,8 @@ app.post(
         renderEncoder = "copy";
       }
       const finalOutput = await attachIntroOutro({ dir, content: output, files: req.files, width, height, fast: settings.fastRender !== false });
-      const savedPath = await availableExportPath(voice.originalname);
+      const outputDirectory = req.body.jobId ? persistentJobs.get(req.body.jobId)?.outputDirectory : null;
+      const savedPath = await availableExportPath(voice.originalname, outputDirectory || exportRoot);
       const { publishMode, verificationMode } = await publishVerifiedOutput(finalOutput, savedPath);
       sendRenderResult({
         ok: true,
@@ -1348,7 +1352,7 @@ app.post("/api/jobs/from-episode", upload.single("music"), async (req, res) => {
     const settings = typeof req.body?.settings === "string" ? JSON.parse(req.body.settings || "{}") : req.body?.settings || {};
     const now = new Date().toISOString(), requestedStart = Date.parse(req.body?.startedAt), startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now;
     settings.overlayImageEnabled = false;
-    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.images, settings, selectionMode:"episode-sequential", transcript:null, output:null };
+    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.images, settings, selectionMode:"episode-sequential", outputDirectory:path.dirname(bundle.audioPath), transcript:null, output:null };
     addJobLog(job, `Đã tự nhận ${path.basename(bundle.timestampPath)} và ${bundle.images.length} ảnh theo thứ tự trong thư mục ${bundle.baseName}${files.music ? "; có nhạc nền" : "; không có nhạc nền"}.`);
     persistentJobs.set(id, job); await savePersistentJob(job);
     res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
