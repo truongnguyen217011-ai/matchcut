@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="./draft-tools.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v7.1</span></div></div><div class="status"><i></i>Ảnh tuần tự · Keyframe · Hiệu ứng · NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v7.2</span></div></div><div class="status"><i></i>Ảnh tuần tự · Keyframe · Hiệu ứng · NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -51,7 +51,6 @@
             <option value="lv">Tiếng Latvia (Latviešu)</option><option value="lt">Tiếng Litva (Lietuvių)</option>
           </select></label>
           <label class="check wide"><input id="poolMode" type="checkbox"> Pool Mode — xoay vòng tư liệu</label>
-          <label class="check"><input id="imageMotionEnabled" type="checkbox" checked> Chuyển động nhân vật trên ảnh</label><label>Mức chuyển động <output id="imageMotionStrengthValue">6%</output><input id="imageMotionStrength" type="range" min="2" max="15" value="6"></label>
         </div></fieldset>
         <fieldset><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">
           <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Roboto</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Oswald</option><option>Bebas Neue</option><option>Archivo Black</option><option>Barlow Condensed</option><option>Nunito</option><option>Noto Sans</option><option>Playfair Display</option><option>Lora</option><option>Georgia</option></select></label>
@@ -75,6 +74,7 @@
           <label>Giãn chữ<input id="letterSpacing" type="number" min="0" max="20" value="1"></label><label>Viền phụ<input id="secondaryOutline" type="color" value="#000000"></label>
         </div></fieldset>
         <fieldset><legend>Hiệu ứng hình ảnh</legend><div class="effect-grid">
+          <label class="check"><input id="imageMotionEnabled" type="checkbox" checked> Bật keyframe chuyển động nhân vật</label><label>Mức chuyển động keyframe <output id="imageMotionStrengthValue">6%</output><input id="imageMotionStrength" type="range" min="2" max="15" value="6"></label>
           <label>Hiệu ứng video<select id="videoEffect"><option value="none">Không hiệu ứng</option><option value="cinematic">Điện ảnh</option><option value="warm">Tông ấm</option><option value="cool">Tông lạnh</option><option value="vivid">Rực rỡ</option><option value="vintage">Cổ điển</option><option value="black-white">Đen trắng</option><option value="dramatic">Tương phản mạnh</option><option value="soft">Mềm dịu</option></select></label>
           <label>Cường độ <output id="videoEffectIntensityValue">50%</output><input id="videoEffectIntensity" type="range" min="0" max="100" value="50"></label>
         </div></fieldset>
