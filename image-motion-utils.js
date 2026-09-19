@@ -5,9 +5,11 @@ export function buildImageMotionFilter({ index = 0, strength = 4, duration = 1, 
   const zoomIn = `1+${amount.toFixed(4)}*${p}`;
   const zoomOut = `${(1 + amount).toFixed(4)}-${amount.toFixed(4)}*${p}`;
   const motions = [
-    { z:zoomIn, x:"floor((iw-iw/zoom)/4)*2", y:"floor((ih-ih/zoom)/4)*2" },
-    { z:zoomOut, x:"floor((iw-iw/zoom)/4)*2", y:"floor((ih-ih/zoom)/4)*2" },
+    { z:zoomIn, x:"(iw-iw/zoom)/2", y:"(ih-ih/zoom)/2" },
+    { z:zoomOut, x:"(iw-iw/zoom)/2", y:"(ih-ih/zoom)/2" },
   ];
   const motion = motions[mode];
-  return `zoompan=z='${motion.z}':x='${motion.x}':y='${motion.y}':d=1:s=${width}x${height}:fps=30`;
+  // Oversampling makes the centered crop move in half-output-pixel steps,
+  // avoiding the visible two-pixel jumps produced by zoompan at final size.
+  return `scale=${width * 2}:${height * 2}:flags=lanczos,zoompan=z='${motion.z}':x='${motion.x}':y='${motion.y}':d=1:s=${width}x${height}:fps=30`;
 }
