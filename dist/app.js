@@ -93,6 +93,9 @@ function applyCaptionStyle() {
   caption.style.setProperty("--accent", s.accentColor);
   caption.style.left = `${s.subtitleX}%`; caption.style.right = "auto"; caption.style.top = `${s.subtitleY}%`; caption.style.bottom = "auto"; caption.style.width = "84%"; caption.style.transform = "translate(-50%,-50%)";
   caption.style.display = s.subtitleEnabled && scenes.length ? "block" : "none";
+  $("#subtitleToggleTitle").textContent = s.subtitleEnabled ? "BẬT PHỤ ĐỀ" : "TẮT PHỤ ĐỀ";
+  $("#subtitleToggleStatus").textContent = s.subtitleEnabled ? "SRT sẽ được gắn vào video" : "Video chỉ gồm ảnh, voice và nhạc nền";
+  $("#subtitleSettings").classList.toggle("subtitles-off", !s.subtitleEnabled);
   $("#backgroundDarknessValue").textContent = `${s.backgroundDarkness}%`;
   $("#subtitleBgValue").textContent = `${s.subtitleBg}%`;
   $("#imageMotionStrengthValue").textContent = `${s.imageMotionStrength}%`;

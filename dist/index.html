@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="./draft-tools.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v7.4</span></div></div><div class="status"><i></i>Ảnh tuần tự · Keyframe đa hướng · Hiệu ứng · NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v7.5</span></div></div><div class="status"><i></i>Ảnh tuần tự · Keyframe đa hướng · Hiệu ứng · NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
@@ -52,7 +52,8 @@
           </select></label>
           <label class="check wide"><input id="poolMode" type="checkbox"> Pool Mode — xoay vòng tư liệu</label>
         </div></fieldset>
-        <fieldset><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">
+        <fieldset id="subtitleSettings"><legend>Phụ đề & chuyển cảnh</legend><div class="effect-grid">
+          <label class="subtitle-master-toggle wide"><input id="subtitleEnabled" type="checkbox" checked><span><strong id="subtitleToggleTitle">BẬT PHỤ ĐỀ</strong><small id="subtitleToggleStatus">SRT sẽ được gắn vào video</small></span></label>
           <label>Font chữ<select id="fontFamily"><option>Arial</option><option>Roboto</option><option>Montserrat</option><option>Poppins</option><option>Anton</option><option>Oswald</option><option>Bebas Neue</option><option>Archivo Black</option><option>Barlow Condensed</option><option>Nunito</option><option>Noto Sans</option><option>Playfair Display</option><option>Lora</option><option>Georgia</option></select></label>
           <label>Cỡ chữ <output id="fontSizeValue">100%</output><input id="fontSizePercent" type="range" min="40" max="220" step="5" value="100"></label>
           <label>Hiệu ứng chữ<select id="textEffect"><option value="auto-motion" selected>Tự động đa hiệu ứng</option><option value="none">Không hiệu ứng</option><option value="fade">Mờ dần hiện lên</option><option value="pop">Nảy Pop</option><option value="karaoke">Karaoke tô từng từ</option><option value="typewriter">Gõ máy từng chữ</option><option value="slide-up">Trượt từ dưới lên</option><option value="zoom-in">Phóng lớn vào</option><option value="bounce">Nảy đàn hồi</option><option value="glow">Phát sáng</option><option value="shake">Rung nhấn mạnh</option></select></label>
@@ -66,7 +67,6 @@
           <div class="color-palette wide"><span>Chọn nhanh màu nhấn</span><div id="accentSwatches"><button type="button" data-color="#ffffff" title="Trắng" style="--swatch:#ffffff"></button><button type="button" data-color="#000000" title="Đen" style="--swatch:#000000"></button><button type="button" data-color="#FFD700" title="Vàng" style="--swatch:#FFD700"></button><button type="button" data-color="#FF3B30" title="Đỏ" style="--swatch:#FF3B30"></button><button type="button" data-color="#2AF0A8" title="Xanh ngọc" style="--swatch:#2AF0A8"></button><button type="button" data-color="#30C0FF" title="Xanh dương" style="--swatch:#30C0FF"></button><button type="button" data-color="#A855F7" title="Tím" style="--swatch:#A855F7"></button><button type="button" data-color="#FF69B4" title="Hồng" style="--swatch:#FF69B4"></button><button type="button" data-color="#FF7A00" title="Cam" style="--swatch:#FF7A00"></button></div></div>
           <label>Vị trí nhanh<select id="subtitlePosition"><option value="top-left">Trên trái</option><option value="top">Trên giữa</option><option value="top-right">Trên phải</option><option value="middle-left">Giữa trái</option><option value="middle">Chính giữa</option><option value="middle-right">Giữa phải</option><option value="bottom-left">Dưới trái</option><option value="bottom" selected>Dưới giữa</option><option value="bottom-right">Dưới phải</option><option value="custom">Tự điều chỉnh</option></select></label>
           <div class="position-editor wide"><div id="positionStage" class="position-stage"><div id="positionMarker">PHỤ ĐỀ MẪU</div></div><div class="position-controls"><label>Ngang X <output id="subtitleXValue">50%</output><input id="subtitleX" type="range" min="5" max="95" value="50"></label><label>Dọc Y <output id="subtitleYValue">85%</output><input id="subtitleY" type="range" min="5" max="95" value="85"></label><small>Kéo trực tiếp chữ trong khung hoặc dùng hai thanh X/Y.</small></div></div>
-          <label class="check"><input id="subtitleEnabled" type="checkbox" checked> Gắn phụ đề vào video</label>
           <label class="check"><input id="fontBold" type="checkbox" checked> Đậm</label><label class="check"><input id="fontItalic" type="checkbox"> Nghiêng</label>
           <label>Độ dày viền<input id="outlineSize" type="number" min="0" max="12" value="2"></label><label>Độ đậm nền <output id="subtitleBgValue">45%</output><input id="subtitleBg" type="range" min="0" max="100" value="45"></label>
           <label class="wide">Giảm tối nền video <output id="backgroundDarknessValue">0%</output><input id="backgroundDarkness" type="range" min="0" max="90" step="5" value="0"></label>
