@@ -8,7 +8,8 @@ test("mỗi ảnh chỉ có một hướng zoom nhẹ và được oversample đ
   assert.match(filters[0], /1\+0\.0400/);
   assert.match(filters[1], /1\.0400-0\.0400/);
   for (const filter of filters) {
-    assert.match(filter, /^scale=3840:2160:flags=lanczos/);
+    assert.match(filter, /^format=yuv444p,scale=7680:4320:flags=lanczos/);
+    assert.match(filter, /min\(on\/149,1\)/);
     assert.match(filter, /x='\(iw-iw\/zoom\)\/2'/);
     assert.match(filter, /y='\(ih-ih\/zoom\)\/2'/);
   }

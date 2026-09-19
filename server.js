@@ -526,7 +526,7 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   const videoEffect = buildVideoEffectFilter(settings.videoEffect, settings.videoEffectIntensity);
   if (videoEffect) vf += `,${videoEffect}`;
   if (scene.mediaType === "image" && settings.imageMotionEnabled !== false) {
-    transition = ["fade", "cinematic-fade", "flash"].includes(transition) ? transition : "none";
+    transition = "none";
   }
   const simpleTransition = ["none", "fade", "cinematic-fade", "flash"].includes(transition);
   if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && simpleTransition) {
@@ -869,7 +869,7 @@ app.post(
           transition = choices[Math.floor(Math.random() * choices.length)];
         }
         if (scene.mediaType === "image" && settings.imageMotionEnabled !== false) {
-          transition = ["fade", "cinematic-fade", "flash"].includes(transition) ? transition : "none";
+          transition = "none";
         }
         previousTransition = transition;
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;

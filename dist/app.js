@@ -197,6 +197,11 @@ if (localStorage.getItem("matchcut.motionV3") !== "1") {
   localStorage.setItem("matchcut.motionV3", "1");
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
 }
+if (localStorage.getItem("matchcut.motionV4") !== "1") {
+  for (const profile of Object.values(profiles)) { profile.imageMotionEnabled = true; profile.imageMotionStrength = 4; profile.transition = "none"; }
+  localStorage.setItem("matchcut.motionV4", "1");
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
+}
 let dialogueDrafts = {};
 try { dialogueDrafts = normalizeDialogueDrafts(JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}")); } catch { dialogueDrafts = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };
