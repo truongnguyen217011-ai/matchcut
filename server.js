@@ -426,7 +426,7 @@ function createAss(scenes, settings) {
     outlineSize = background.outlineSize;
   const subtitleCues = buildSubtitleCues(scenes, settings);
   const renderedCues = settings.textEffect === "typewriter" ? subtitleCues.flatMap(expandTypewriterScene) : subtitleCues;
-  const automaticTextEffects = ["fade", "pop", "slide-up", "zoom-in", "bounce", "shake"];
+  const automaticTextEffects = ["fade", "pop", "slide-up", "zoom-in", "bounce"];
   const events = renderedCues
     .map((scene, index) => {
       const cueSettings = settings.textEffect === "auto-motion" ? { ...settings, textEffect:automaticTextEffects[index % automaticTextEffects.length] } : settings;
@@ -525,6 +525,9 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   if (darkness > 0) vf += `,eq=brightness=${(-darkness / 100).toFixed(2)}`;
   const videoEffect = buildVideoEffectFilter(settings.videoEffect, settings.videoEffectIntensity);
   if (videoEffect) vf += `,${videoEffect}`;
+  if (scene.mediaType === "image" && settings.imageMotionEnabled !== false) {
+    transition = ["fade", "cinematic-fade", "flash"].includes(transition) ? transition : "none";
+  }
   const simpleTransition = ["none", "fade", "cinematic-fade", "flash"].includes(transition);
   if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && simpleTransition) {
     vf += `,${buildImageMotionFilter({ index:scene.motionIndex, strength:settings.imageMotionStrength, duration, width, height })}`;
@@ -548,7 +551,7 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
 async function renderSinglePass({ dir, files, voice, media, scenes, captionScenes, settings, width, height, overlayImagePath, overlayImageX = 0, overlayImageY = 0, overlayImagePreScaled = false, timeOffset = 0, outputName = "matchcut-output.mp4", gpuMode }) {
   if (gpuMode === undefined) gpuMode = await hasCudaPipeline();
   if (scenes.length > 120) throw new Error(`Timeline ${scenes.length} cảnh vượt ngưỡng single-pass an toàn 120 cảnh.`);
-  const randomTransitions = settings.fastRender !== false ? ["none", "fade", "zoom-in", "zoom-out", "flash"] : ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
+  const randomTransitions = ["none", "fade"];
   const sourceMap = new Map(), resolvedScenes = [];
   for (let index = 0; index < scenes.length; index++) {
     const scene = scenes[index];
@@ -850,7 +853,7 @@ app.post(
           console.warn(`Single-pass fallback: ${singlePassError instanceof Error ? singlePassError.message : singlePassError}`);
         }
       }
-      const randomTransitions = ["fade", "cinematic-fade", "zoom-in", "zoom-out", "cross-zoom", "slide-left", "slide-right", "pan-up", "pan-down", "diagonal-up", "diagonal-down", "rotate-in", "shake-cut", "flash"];
+      const randomTransitions = ["none", "fade"];
       let previousTransition = "";
       for (let i = 0; i < scenes.length; i++) {
         const scene = scenes[i],
@@ -864,6 +867,9 @@ app.post(
         if (transition === "random") {
           const choices = randomTransitions.filter((item) => item !== previousTransition);
           transition = choices[Math.floor(Math.random() * choices.length)];
+        }
+        if (scene.mediaType === "image" && settings.imageMotionEnabled !== false) {
+          transition = ["fade", "cinematic-fade", "flash"].includes(transition) ? transition : "none";
         }
         previousTransition = transition;
         let vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`;
