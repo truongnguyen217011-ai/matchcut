@@ -103,6 +103,7 @@ function applyCaptionStyle() {
   updateEffectInspector(s);
 }
 const TEXT_EFFECT_INFO = {
+  "auto-motion": ["Tự động đa hiệu ứng", "Mỗi câu luân phiên fade, pop, trượt lên, zoom, nảy và rung để chữ không đứng yên."],
   none: ["Không hiệu ứng", "Phụ đề xuất hiện ngay, rõ ràng và nhẹ máy."],
   fade: ["Mờ dần hiện lên", "Chữ tăng dần độ rõ, phù hợp video kể chuyện nhẹ nhàng."],
   pop: ["Nảy Pop", "Chữ bật nhanh từ nhỏ đến đủ cỡ, tạo cảm giác năng động."],
@@ -183,6 +184,11 @@ const PROFILE_ASSET_INPUTS = { music:"#musicInput" };
 const PROFILE_FIELDS = ["fontFamily","fontSizePercent","textEffect","transition","fontColor","accentColor","captionBackgroundStyle","captionBackgroundColor","subtitlePosition","subtitleX","subtitleY","subtitleEnabled","profileName","aspectRatio","language","poolMode","imageMotionEnabled","imageMotionStrength","videoEffect","videoEffectIntensity","fontBold","fontItalic","outlineSize","subtitleBg","backgroundDarkness","wordsPerCaption","maxLines","letterSpacing","secondaryOutline","voiceVolume","voiceDelay","musicVolume","persistentTitle","titleLine1","titleLine2","titleEffect","titlePosition","mediaSelectionMode","folderPaths","autoRenderOnMatch","fastRender"];
 let profiles = {};
 try { profiles = JSON.parse(localStorage.getItem(PROFILE_KEY) || "{}"); } catch { profiles = {}; }
+if (localStorage.getItem("matchcut.motionV2") !== "1") {
+  for (const profile of Object.values(profiles)) { profile.textEffect = "auto-motion"; profile.imageMotionEnabled = true; profile.imageMotionStrength = 8; }
+  localStorage.setItem("matchcut.motionV2", "1");
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
+}
 let dialogueDrafts = {};
 try { dialogueDrafts = normalizeDialogueDrafts(JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}")); } catch { dialogueDrafts = {}; }
 if (!Object.keys(profiles).length) profiles.default = { ...effectSettings(), profileName: "Kênh mặc định" };

@@ -31,6 +31,7 @@ import { isValidCachedTranscript, transcriptCacheKey } from "./transcript-cache-
 import { boundaryCacheKey } from "./boundary-cache-utils.js";
 import { findAlphaBounds, overlayCacheKey } from "./overlay-cache-utils.js";
 import { buildVideoEffectFilter } from "./video-effects.js";
+import { buildImageMotionFilter } from "./image-motion-utils.js";
 const root = path.dirname(fileURLToPath(import.meta.url)),
   jobsRoot = path.join(root, "jobs"),
   persistentRoot = path.join(root, "data", "runtime-jobs"),
@@ -425,10 +426,12 @@ function createAss(scenes, settings) {
     outlineSize = background.outlineSize;
   const subtitleCues = buildSubtitleCues(scenes, settings);
   const renderedCues = settings.textEffect === "typewriter" ? subtitleCues.flatMap(expandTypewriterScene) : subtitleCues;
+  const automaticTextEffects = ["fade", "pop", "slide-up", "zoom-in", "bounce", "shake"];
   const events = renderedCues
-    .map((scene) => {
-      const content = assEscape(scene.text), placement = settings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
-      const text = applyAssTextEffect(content, placement, scene, settings, accent, primary, background.prefix);
+    .map((scene, index) => {
+      const cueSettings = settings.textEffect === "auto-motion" ? { ...settings, textEffect:automaticTextEffects[index % automaticTextEffects.length] } : settings;
+      const content = assEscape(scene.text), placement = cueSettings.textEffect === "slide-up" ? `{\\move(${subtitleX},${subtitleY + 180},${subtitleX},${subtitleY},0,350)\\fad(120,100)}` : `{\\pos(${subtitleX},${subtitleY})}`;
+      const text = applyAssTextEffect(content, placement, scene, cueSettings, accent, primary, background.prefix);
       return `Dialogue: 0,${assTime(scene.start)},${assTime(scene.end)},Default,,0,0,0,,${text}`;
     })
     .join("\n");
@@ -524,12 +527,7 @@ function sceneVideoFilter(scene, settings, width, height, duration, transition, 
   if (videoEffect) vf += `,${videoEffect}`;
   const simpleTransition = ["none", "fade", "cinematic-fade", "flash"].includes(transition);
   if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && simpleTransition) {
-    const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
-    const frames = Math.max(15, Math.ceil(duration * 30)), progress = `min(on/${frames},1)`;
-    const direction = Math.abs(Number(scene.motionIndex) || 0) % 4;
-    const x = direction === 0 ? `(iw-iw/zoom)*${progress}` : direction === 1 ? `(iw-iw/zoom)*(1-${progress})` : `(iw-iw/zoom)/2`;
-    const y = direction === 2 ? `(ih-ih/zoom)*${progress}` : direction === 3 ? `(ih-ih/zoom)*(1-${progress})` : `(ih-ih/zoom)/2`;
-    vf += `,zoompan=z='1+${strength.toFixed(4)}*${progress}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30`;
+    vf += `,${buildImageMotionFilter({ index:scene.motionIndex, strength:settings.imageMotionStrength, duration, width, height })}`;
   }
   if (transition === "fade") vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
   if (transition === "cinematic-fade") vf += `,eq=contrast=1.08:saturation=0.92,fade=t=in:st=0:d=${Math.min(0.7, duration / 3).toFixed(2)}:color=black`;
@@ -874,11 +872,7 @@ app.post(
         const videoEffect = buildVideoEffectFilter(settings.videoEffect, settings.videoEffectIntensity);
         if (videoEffect) vf += `,${videoEffect}`;
         if (scene.mediaType === "image" && settings.imageMotionEnabled !== false && ["none", "fade", "cinematic-fade", "flash"].includes(transition)) {
-          const strength = Math.min(15, Math.max(2, Number(settings.imageMotionStrength) || 6)) / 100;
-          const frames = Math.max(15, Math.ceil(duration * 30)), progress = `min(on/${frames},1)`, direction = Math.abs(Number(scene.motionIndex) || 0) % 4;
-          const x = direction === 0 ? `(iw-iw/zoom)*${progress}` : direction === 1 ? `(iw-iw/zoom)*(1-${progress})` : `(iw-iw/zoom)/2`;
-          const y = direction === 2 ? `(ih-ih/zoom)*${progress}` : direction === 3 ? `(ih-ih/zoom)*(1-${progress})` : `(ih-ih/zoom)/2`;
-          vf += `,zoompan=z='1+${strength.toFixed(4)}*${progress}':x='${x}':y='${y}':d=1:s=${width}x${height}:fps=30`;
+          vf += `,${buildImageMotionFilter({ index:scene.motionIndex, strength:settings.imageMotionStrength, duration, width, height })}`;
         }
         if (transition === "fade")
           vf += `,fade=t=in:st=0:d=${Math.min(0.45, duration / 3).toFixed(2)}`;
