@@ -17,7 +17,6 @@ import {
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { pipeline } from "@huggingface/transformers";
 import wavefile from "wavefile";
 import sharp from "sharp";
 import { buildSubtitleCues } from "./subtitle-utils.js";
@@ -88,11 +87,11 @@ async function applySavedProfileAssets(req) {
   for (const field of profileAssetFields) if (!req.files[field]?.[0] && saved[field]?.[0]) req.files[field] = saved[field];
 }
 function getWhisper() {
-  whisperPromise ??= pipeline(
+  whisperPromise ??= import("@huggingface/transformers").then(({ pipeline }) => pipeline(
     "automatic-speech-recognition",
     "onnx-community/whisper-tiny",
     { dtype: "q8" },
-  );
+  ));
   return whisperPromise;
 }
 function run(args) {

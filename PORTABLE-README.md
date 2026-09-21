@@ -2,16 +2,10 @@
 
 ## May moi
 
-1. Cai NVIDIA driver moi nhat neu may co GPU NVIDIA.
-2. Cai Node.js 20+ va Python 3.10+.
-3. Mo PowerShell trong thu muc nay va chay:
+1. Giai nen toan bo file ZIP.
+2. Nhap dup `Start-MatchCut.cmd`.
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install-portable.ps1
-```
-
-4. Nhap dup `Start-MatchCut.cmd`. Lan dau script tu cai dependencies, cac lan sau mo thang tool.
+Khong can cai Node.js, npm hay FFmpeg. Tat ca da nam trong goi one-click.
 
 Neu muon chay thu cong:
 
@@ -29,6 +23,6 @@ $env:MATCHCUT_NVENC_CQ="25"
 .\start-portable.ps1
 ```
 
-Goi portable khong kem `node_modules`, virtualenv Whisper, cache, job va output cu; script cai dat se tai lai dung phien ban trong `package-lock.json`.
+Goi one-click kem Node runtime, `node_modules` va FFmpeg. Goi khong kem cache, job va output cu.
 
-De co toc do gan may goc, may moi can GPU/driver NVENC, SSD, Node, Python va toc do doc footage tuong duong. Khong co NVIDIA CUDA, tool tu dong fallback CPU va se cham hon.
+De co toc do gan may goc, may moi can GPU/driver NVENC, SSD va toc do doc footage tuong duong. Khong co NVIDIA CUDA, tool tu dong fallback CPU va se cham hon. Python chi can neu muon tu dong tao timestamps bang Faster-Whisper; luong voice + SRT co san khong can Python.

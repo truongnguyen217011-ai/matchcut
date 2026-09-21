@@ -17,10 +17,12 @@ try {
     if ($actual -ne $remote.sha256.ToLowerInvariant()) { throw "Sai checksum goi cap nhat." }
   }
   Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-  $source = (Get-ChildItem -LiteralPath $extract -Force | Select-Object -First 1).FullName
-  if (-not $source) { throw "Goi cap nhat rong." }
+  $source = $extract
+  $topItems = @(Get-ChildItem -LiteralPath $extract -Force)
+  if ($topItems.Count -eq 1 -and $topItems[0].PSIsContainer -and (Test-Path -LiteralPath (Join-Path $topItems[0].FullName "server.js"))) { $source = $topItems[0].FullName }
+  if (-not (Test-Path -LiteralPath (Join-Path $source "server.js"))) { throw "Goi cap nhat khong hop le." }
   Get-ChildItem -LiteralPath $source -Force | ForEach-Object {
-    if ($_.Name -notin @("data", "jobs", "node_modules", ".venv-whisper")) {
+    if ($_.Name -notin @("data", "jobs", ".venv-whisper")) {
       Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $projectRoot $_.Name) -Recurse -Force
     }
   }
