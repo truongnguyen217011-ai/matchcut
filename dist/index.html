@@ -10,11 +10,11 @@
   <link rel="stylesheet" href="./draft-tools.css" />
 </head>
 <body>
-  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v8.0</span></div></div><div class="status"><i></i>One-click · Zoom một chiều siêu mượt · NVENC</div></header>
+  <header><div class="brand"><div class="logo">M</div><div><strong>MatchCut Studio</strong><span>Automated Video Factory · v8.1</span></div></div><div class="status"><i></i>MP4 cạnh voice + SRT · Zoom siêu mượt · NVENC</div></header>
   <section class="batch-panel panel machine-panel">
     <div class="batch-head"><div><strong>Cỗ máy xử lý video tự động</strong><span>Voice + SRT cùng tên → bỏ qua Whisper; thiếu/lỗi SRT → Faster-Whisper tự động → FFmpeg MP4</span></div><button id="clearBatch">Xóa hết</button></div>
     <div class="batch-layout">
-      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chọn voice để tự tìm SRT và thư mục ảnh cùng tên.</div></div><div class="batch-actions"><button id="pickEpisodes" class="batch-add" type="button">Tự tìm ảnh theo tập</button><label class="batch-add"><input id="voiceInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.srt,.txt,application/x-subrip,text/plain" multiple>＋ Thêm voice + SRT</label><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
+      <div class="batch-files"><div id="batchList" class="batch-list"><div class="batch-empty">Chọn một hoặc nhiều voice. Mỗi voice tự nhận SRT cùng tên và xuất MP4 về đúng thư mục của tập đó.</div></div><div class="batch-actions"><button id="pickEpisodes" class="batch-add" type="button">＋ Thêm nhiều voice · tự nhận SRT</button><input id="voiceInput" type="file" accept="audio/*,.mp3,.wav,.m4a,.srt,.txt,application/x-subrip,text/plain" multiple hidden><button id="selectAllBatch">Chọn tất cả</button><button id="unselectAllBatch">Bỏ chọn</button></div></div>
       <div class="batch-progress"><div class="progress-title">Tiến trình tự động <span id="batchCounter">0/0</span></div><div id="currentJobProgress" class="current-job-progress idle"><div class="current-job-top"><span id="currentJobPosition">Chưa chạy</span><strong id="currentJobPercent">0%</strong></div><div id="currentJobName">Chưa có video đang xử lý</div><div class="current-job-track"><i id="currentJobBar"></i></div><small id="currentJobStage">Sẵn sàng nhận hàng đợi</small><div class="current-job-times"><span>Bắt đầu <b id="currentJobStarted">--:--:--</b></span><span id="currentJobEndLabel">Đã chạy <b id="currentJobElapsed">0 phút</b></span></div></div><pre id="batchLog">Sẵn sàng. Thiết lập kênh và footage, sau đó thêm voice để xử lý.</pre><div class="run-actions"><button id="runSingle" disabled>▶ CHẠY 1 FILE</button><button id="runBatch" disabled>⧉ CHẠY HÀNG LOẠT</button><button id="stopBatch" class="stop" disabled>■ DỪNG</button></div></div>
     </div>
   </section>
@@ -89,10 +89,10 @@
         </div></fieldset>
       </details>
       <label class="auto-render-toggle"><input id="fastRender" type="checkbox" checked><span><strong>Render nhanh — mục tiêu 15–17 phút / tập 40 phút</strong><small>Giảm số lần đổi cảnh, dùng chuyển cảnh nhẹ và single-pass NVENC; giữ nguyên 1080p, voice và phụ đề.</small></span></label>
-      <label class="auto-render-toggle manual-only"><input id="autoRenderOnMatch" type="checkbox" checked><span><strong>Tự render và lưu MP4 sau khi ghép</strong><small>Không cần bấm Render thêm lần nữa · lưu tại C:\MatchCut\Exports</small></span></label><button id="matchBtn" class="primary manual-only"><span>✦</span>Tự động ghép khớp lời và render</button>
+      <label class="auto-render-toggle manual-only"><input id="autoRenderOnMatch" type="checkbox" checked><span><strong>Tự render và lưu MP4 sau khi ghép</strong><small>Luồng mặc định lưu MP4 cùng thư mục với voice và SRT</small></span></label><button id="matchBtn" class="primary manual-only"><span>✦</span>Tự động ghép khớp lời và render</button>
       <div id="matchStatus" class="match-status">Cần voice, lời thoại và ít nhất một ảnh/video.</div>
       <div class="title export-title"><span>03</span><div><h2>Render lại thủ công</h2><p>Chỉ dùng khi bạn đã chỉnh timeline và muốn xuất lại</p></div></div>
-      <div class="export-card"><div><small>Thư mục lưu</small><strong>C:\MatchCut\Exports</strong></div><div><small>Tên video</small><strong id="outputName">Lấy theo tên file âm thanh.mp4</strong></div><button id="exportBtn" class="render" disabled>● Render và lưu MP4 bằng FFmpeg</button></div>
+      <div class="export-card"><div><small>Thư mục lưu mặc định</small><strong>Cùng thư mục voice + SRT</strong></div><div><small>Tên video</small><strong id="outputName">Lấy theo tên file âm thanh.mp4</strong></div><button id="exportBtn" class="render" disabled>● Render và lưu MP4 bằng FFmpeg</button></div>
       <div id="renderStatus" class="render-status"></div>
     </section>
     <section class="workspace panel">

@@ -753,7 +753,7 @@ function renderCurrentJobProgress() {
 }
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.imageCount} ảnh theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.imageFolder ? `<small class="job-output">${safeHtml(item.imageFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn file âm thanh để tự tìm SRT và thư mục ảnh cùng tên.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.imageCount} ảnh theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.outputDirectory && !item.output?.savedPath ? `<small class="job-output">MP4 → ${safeHtml(item.outputDirectory)}</small>` : ""}${item.imageFolder ? `<small class="job-output">Ảnh → ${safeHtml(item.imageFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn một hoặc nhiều voice; mỗi tập sẽ tự nhận SRT và thư mục ảnh cùng tên.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
   updateBatchButtons(); renderCurrentJobProgress();
@@ -769,13 +769,13 @@ $("#pickEpisodes").onclick = async () => {
     if (!response.ok) throw new Error(result.error || "Không thể tìm bộ tập.");
     for (const bundle of result.bundles || []) {
       if (batchFiles.some((item) => item.localEpisode && item.audioPath === bundle.audioPath)) continue;
-      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, imageFolder:bundle.imageFolder, imageCount:bundle.images.length, selected:true, status:"Sẵn sàng", stage:"Đã nhận đúng bộ tập", progress:0 });
-      batchLog(`✓ ${bundle.baseName}: đã tìm ${bundle.images.length} ảnh theo thứ tự và ${bundle.timestampPath.split(/[\\/]/).at(-1)}.`);
+      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, imageFolder:bundle.imageFolder, outputDirectory:bundle.outputDirectory, imageCount:bundle.images.length, selected:true, status:"Sẵn sàng", stage:"Sẽ xuất MP4 cạnh voice + SRT", progress:0 });
+      batchLog(`✓ ${bundle.baseName}: đã tìm ${bundle.images.length} ảnh; MP4 sẽ lưu tại ${bundle.outputDirectory}.`);
     }
     for (const failure of result.errors || []) batchLog(`✕ ${failure.audioPath}: ${failure.error}`);
     renderBatchList();
   } catch (error) { batchLog(`Không thể tự tìm bộ tập: ${error.message}`); }
-  finally { button.disabled = false; button.textContent = "Tự tìm ảnh theo tập"; }
+  finally { button.disabled = false; button.textContent = "＋ Thêm nhiều voice · tự nhận SRT"; }
 };
 $("#clearBatch").onclick = async () => {
   if (batchRunning) return;
@@ -817,7 +817,7 @@ async function processBatchItem(item) {
   while (true) {
     try {
       const response = await fetch(`/api/jobs/${item.jobId}`); if (!response.ok) throw new Error("Job không tồn tại"); const job = await response.json();
-      item.serverStatus = job.status; item.status = ({queued:"Chờ chạy",transcribing:"Tạo timestamp",rendering:"Đang render",completed:"Hoàn tất",failed:"Lỗi"})[job.status] || job.status; item.stage = job.stage; item.progress = job.progress; item.error = job.error; item.output = job.output; item.startedAt = job.startedAt || item.startedAt || job.createdAt; item.createdAt = job.createdAt; item.updatedAt = job.updatedAt; item.completedAt = job.completedAt; item.failedAt = job.failedAt;
+      item.serverStatus = job.status; item.status = ({queued:"Chờ chạy",transcribing:"Tạo timestamp",rendering:"Đang render",completed:"Hoàn tất",failed:"Lỗi"})[job.status] || job.status; item.stage = job.stage; item.progress = job.progress; item.error = job.error; item.output = job.output; item.outputDirectory = job.outputDirectory || item.outputDirectory; item.startedAt = job.startedAt || item.startedAt || job.createdAt; item.createdAt = job.createdAt; item.updatedAt = job.updatedAt; item.completedAt = job.completedAt; item.failedAt = job.failedAt;
       for (const entry of (job.logs || []).slice(item.logCount || 0)) batchLog(`${item.fileName || job.name}: ${entry.message}`); item.logCount = (job.logs || []).length; renderBatchList();
       if (job.status === "completed") return;
       if (job.status === "failed") throw new Error(job.error || `Lỗi tại ${job.stage}`);

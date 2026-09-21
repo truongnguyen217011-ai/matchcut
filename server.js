@@ -462,7 +462,7 @@ async function discoverEpisodeBundle(audioPath) {
     .map((entry) => ({ name: entry.name, localPath: path.join(imageFolder, entry.name), type: "image", uploadIndex: null }));
   if (!images.length) throw new Error(`Thư mục ${baseName} không có ảnh JPG, PNG, WebP hoặc BMP.`);
   for (const image of images) allowedLocalMedia.add(path.resolve(image.localPath));
-  return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, images };
+  return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, outputDirectory:parent, images };
 }
 const lastOverlaySelections = new Map();
 async function findOverlayImages(folder) {
@@ -1137,7 +1137,7 @@ const jobPublic = (job) => ({
   stage: job.stage, progress: job.progress, error: job.error, logs: job.logs,
   createdAt: job.createdAt, startedAt: job.startedAt || job.createdAt, updatedAt: job.updatedAt,
   completedAt: job.completedAt, failedAt: job.failedAt,
-  output: job.output, transcriptCount: job.transcript?.chunks?.length || 0,
+  output: job.output, outputDirectory: job.outputDirectory || exportRoot, transcriptCount: job.transcript?.chunks?.length || 0,
   language: job.transcript?.language || job.settings?.language || "auto",
 });
 function addJobLog(job, message) {
@@ -1351,8 +1351,9 @@ app.post("/api/jobs/from-episode", upload.single("music"), async (req, res) => {
     const settings = typeof req.body?.settings === "string" ? JSON.parse(req.body.settings || "{}") : req.body?.settings || {};
     const now = new Date().toISOString(), requestedStart = Date.parse(req.body?.startedAt), startedAt = Number.isFinite(requestedStart) && requestedStart <= Date.now() + 5000 ? new Date(requestedStart).toISOString() : now;
     settings.overlayImageEnabled = false;
-    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.images, settings, selectionMode:"episode-sequential", outputDirectory:path.dirname(bundle.audioPath), transcript:null, output:null };
+    const job = { id, name:path.basename(bundle.audioPath), profileName:settings.profileName || "Kênh mặc định", status:"queued", stage:"Chờ xử lý", progress:0, error:null, logs:[], createdAt:now, startedAt, updatedAt:now, completedAt:null, failedAt:null, files, assets:bundle.images, settings, selectionMode:"episode-sequential", outputDirectory:bundle.outputDirectory, transcript:null, output:null };
     addJobLog(job, `Đã tự nhận ${path.basename(bundle.timestampPath)} và ${bundle.images.length} ảnh theo thứ tự trong thư mục ${bundle.baseName}${files.music ? "; có nhạc nền" : "; không có nhạc nền"}.`);
+    addJobLog(job, `MP4 mặc định sẽ được lưu cạnh voice và SRT: ${bundle.outputDirectory}`);
     persistentJobs.set(id, job); await savePersistentJob(job);
     res.status(202).json(jobPublic(job)); void pumpPersistentJobs();
   } catch (error) {
