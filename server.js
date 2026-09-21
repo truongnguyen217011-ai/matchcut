@@ -478,6 +478,16 @@ async function discoverEpisodeBundle(audioPath) {
   for (const image of images) allowedLocalMedia.add(path.resolve(image.localPath));
   return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, outputDirectory:parent, images };
 }
+async function describeIncompleteEpisode(audioPath, error) {
+  const voicePath = path.resolve(String(audioPath || "").trim()), parent = path.dirname(voicePath), baseName = path.basename(voicePath, path.extname(voicePath));
+  let timestampPath = null;
+  try {
+    const normalizedBaseName = normalizedEpisodeName(baseName);
+    const timestampEntry = (await readdir(parent, { withFileTypes:true })).find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && normalizedEpisodeName(path.basename(entry.name, path.extname(entry.name))) === normalizedBaseName);
+    if (timestampEntry) timestampPath = path.join(parent, timestampEntry.name);
+  } catch {}
+  return { baseName, audioPath:voicePath, timestampPath, imageFolder:null, outputDirectory:parent, images:[], discoveryError:error instanceof Error ? error.message : String(error) };
+}
 const lastOverlaySelections = new Map();
 async function findOverlayImages(folder) {
   const results = [], pending = [path.resolve(folder)];
@@ -745,7 +755,10 @@ app.post("/api/pick-episodes", async (_req, res) => {
     const selected = JSON.parse(output), audioPaths = Array.isArray(selected) ? selected : [selected], bundles = [], errors = [];
     for (const audioPath of audioPaths) {
       try { bundles.push(await discoverEpisodeBundle(audioPath)); }
-      catch (error) { errors.push({ audioPath, error: error instanceof Error ? error.message : String(error) }); }
+      catch (error) {
+        try { bundles.push(await describeIncompleteEpisode(audioPath, error)); }
+        catch (descriptionError) { errors.push({ audioPath, error:descriptionError instanceof Error ? descriptionError.message : String(descriptionError) }); }
+      }
     }
     res.json({ ok: true, bundles, errors });
   } catch (error) {
