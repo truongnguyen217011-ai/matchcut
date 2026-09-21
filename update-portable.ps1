@@ -23,7 +23,11 @@ try {
   if (-not (Test-Path -LiteralPath (Join-Path $source "server.js"))) { throw "Goi cap nhat khong hop le." }
   Get-ChildItem -LiteralPath $source -Force | ForEach-Object {
     if ($_.Name -notin @("data", "jobs", ".venv-whisper")) {
-      Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $projectRoot $_.Name) -Recurse -Force
+      $destination = Join-Path $projectRoot $_.Name
+      if ($_.PSIsContainer) {
+        New-Item -ItemType Directory -Force -Path $destination | Out-Null
+        Get-ChildItem -LiteralPath $_.FullName -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $destination $_.Name) -Recurse -Force }
+      } else { Copy-Item -LiteralPath $_.FullName -Destination $destination -Force }
     }
   }
   $remote | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $projectRoot "update-manifest.json") -Encoding UTF8
