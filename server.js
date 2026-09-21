@@ -443,6 +443,12 @@ const mediaExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif
 const episodeImageExtensions = new Set([".jpg", ".jpeg", ".png", ".webp", ".bmp"]);
 const episodeAudioExtensions = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"]);
 const naturalNameCollator = new Intl.Collator("vi", { numeric: true, sensitivity: "base" });
+const normalizedEpisodeName = (value) => String(value || "").normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+async function episodeImagesIn(folder) {
+  return (await readdir(folder, { withFileTypes:true }))
+    .filter((entry) => entry.isFile() && episodeImageExtensions.has(path.extname(entry.name).toLowerCase()))
+    .sort((a, b) => naturalNameCollator.compare(a.name, b.name));
+}
 
 async function discoverEpisodeBundle(audioPath) {
   const voicePath = path.resolve(String(audioPath || "").trim()), extension = path.extname(voicePath).toLowerCase();
@@ -451,16 +457,24 @@ async function discoverEpisodeBundle(audioPath) {
   if (!voiceInfo.isFile()) throw new Error(`${voicePath} không phải file âm thanh.`);
   const parent = path.dirname(voicePath), baseName = path.basename(voicePath, path.extname(voicePath));
   const entries = await readdir(parent, { withFileTypes: true });
-  const timestampEntry = entries.find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && path.basename(entry.name, path.extname(entry.name)).toLocaleLowerCase() === baseName.toLocaleLowerCase());
-  const folderEntry = entries.find((entry) => entry.isDirectory() && entry.name.toLocaleLowerCase() === baseName.toLocaleLowerCase());
+  const normalizedBaseName = normalizedEpisodeName(baseName);
+  const timestampEntry = entries.find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && normalizedEpisodeName(path.basename(entry.name, path.extname(entry.name))) === normalizedBaseName);
+  const folderEntry = entries.find((entry) => entry.isDirectory() && normalizedEpisodeName(entry.name) === normalizedBaseName);
   if (!timestampEntry) throw new Error(`Thiếu ${baseName}.txt hoặc ${baseName}.srt nằm cạnh file âm thanh.`);
-  if (!folderEntry) throw new Error(`Thiếu thư mục video ${baseName} nằm cạnh file âm thanh.`);
-  const imageFolder = path.join(parent, folderEntry.name);
-  const images = (await readdir(imageFolder, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && episodeImageExtensions.has(path.extname(entry.name).toLowerCase()))
-    .sort((a, b) => naturalNameCollator.compare(a.name, b.name))
+  let imageFolder = folderEntry ? path.join(parent, folderEntry.name) : parent;
+  let imageEntries = await episodeImagesIn(imageFolder);
+  if (!imageEntries.length && !folderEntry) {
+    const candidates = [];
+    for (const entry of entries.filter((item) => item.isDirectory())) {
+      const candidateFolder = path.join(parent, entry.name), candidateImages = await episodeImagesIn(candidateFolder);
+      if (candidateImages.length) candidates.push({ folder:candidateFolder, images:candidateImages });
+    }
+    if (candidates.length === 1) ({ folder:imageFolder, images:imageEntries } = candidates[0]);
+    else if (candidates.length > 1) throw new Error(`Có nhiều thư mục ảnh cạnh ${path.basename(voicePath)}; hãy đặt ảnh ngay cạnh voice/SRT hoặc trong thư mục cùng tên voice.`);
+  }
+  const images = imageEntries
     .map((entry) => ({ name: entry.name, localPath: path.join(imageFolder, entry.name), type: "image", uploadIndex: null }));
-  if (!images.length) throw new Error(`Thư mục ${baseName} không có ảnh JPG, PNG, WebP hoặc BMP.`);
+  if (!images.length) throw new Error(`Không tìm thấy ảnh của ${baseName}. Hãy đặt ảnh ngay cạnh voice/SRT hoặc trong một thư mục cùng tên.`);
   for (const image of images) allowedLocalMedia.add(path.resolve(image.localPath));
   return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, outputDirectory:parent, images };
 }
