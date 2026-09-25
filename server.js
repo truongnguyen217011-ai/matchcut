@@ -450,7 +450,7 @@ async function episodeImagesIn(folder) {
     .sort((a, b) => naturalNameCollator.compare(a.name, b.name));
 }
 
-async function discoverEpisodeBundle(audioPath) {
+async function discoverEpisodeBundle(audioPath, selectedImageFolder = null) {
   const voicePath = path.resolve(String(audioPath || "").trim()), extension = path.extname(voicePath).toLowerCase();
   if (!episodeAudioExtensions.has(extension)) throw new Error(`Không hỗ trợ file âm thanh ${path.basename(voicePath)}.`);
   const voiceInfo = await stat(voicePath);
@@ -459,24 +459,26 @@ async function discoverEpisodeBundle(audioPath) {
   const entries = await readdir(parent, { withFileTypes: true });
   const normalizedBaseName = normalizedEpisodeName(baseName);
   const timestampEntry = entries.find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && normalizedEpisodeName(path.basename(entry.name, path.extname(entry.name))) === normalizedBaseName);
-  const folderEntry = entries.find((entry) => entry.isDirectory() && normalizedEpisodeName(entry.name) === normalizedBaseName);
   if (!timestampEntry) throw new Error(`Thiếu ${baseName}.txt hoặc ${baseName}.srt nằm cạnh file âm thanh.`);
-  let imageFolder = folderEntry ? path.join(parent, folderEntry.name) : parent;
-  let imageEntries = await episodeImagesIn(imageFolder);
-  if (!imageEntries.length && !folderEntry) {
-    const candidates = [];
-    for (const entry of entries.filter((item) => item.isDirectory())) {
-      const candidateFolder = path.join(parent, entry.name), candidateImages = await episodeImagesIn(candidateFolder);
-      if (candidateImages.length) candidates.push({ folder:candidateFolder, images:candidateImages });
-    }
-    if (candidates.length === 1) ({ folder:imageFolder, images:imageEntries } = candidates[0]);
-    else if (candidates.length > 1) throw new Error(`Có nhiều thư mục ảnh cạnh ${path.basename(voicePath)}; hãy đặt ảnh ngay cạnh voice/SRT hoặc trong thư mục cùng tên voice.`);
-  }
+  if (!selectedImageFolder) throw new Error(`Đã nhận voice và SRT của ${baseName}. Hãy chọn thư mục ảnh riêng cho tập này.`);
+  const imageFolder = path.resolve(String(selectedImageFolder).trim()), imageFolderInfo = await stat(imageFolder);
+  if (!imageFolderInfo.isDirectory()) throw new Error(`${imageFolder} không phải thư mục ảnh.`);
+  const imageEntries = await episodeImagesIn(imageFolder);
   const images = imageEntries
     .map((entry) => ({ name: entry.name, localPath: path.join(imageFolder, entry.name), type: "image", uploadIndex: null }));
-  if (!images.length) throw new Error(`Không tìm thấy ảnh của ${baseName}. Hãy đặt ảnh ngay cạnh voice/SRT hoặc trong một thư mục cùng tên.`);
+  if (!images.length) throw new Error(`Thư mục đã chọn không có ảnh JPG, PNG, WEBP hoặc BMP.`);
   for (const image of images) allowedLocalMedia.add(path.resolve(image.localPath));
   return { baseName, audioPath: voicePath, timestampPath: path.join(parent, timestampEntry.name), imageFolder, outputDirectory:parent, images };
+}
+async function describeEpisodeVoice(audioPath) {
+  const voicePath = path.resolve(String(audioPath || "").trim()), extension = path.extname(voicePath).toLowerCase();
+  if (!episodeAudioExtensions.has(extension)) throw new Error(`Không hỗ trợ file âm thanh ${path.basename(voicePath)}.`);
+  const voiceInfo = await stat(voicePath);
+  if (!voiceInfo.isFile()) throw new Error(`${voicePath} không phải file âm thanh.`);
+  const parent = path.dirname(voicePath), baseName = path.basename(voicePath, extension), normalizedBaseName = normalizedEpisodeName(baseName);
+  const timestampEntry = (await readdir(parent, { withFileTypes:true })).find((entry) => entry.isFile() && [".txt", ".srt"].includes(path.extname(entry.name).toLowerCase()) && normalizedEpisodeName(path.basename(entry.name, path.extname(entry.name))) === normalizedBaseName);
+  if (!timestampEntry) throw new Error(`Thiếu ${baseName}.txt hoặc ${baseName}.srt nằm cạnh file âm thanh.`);
+  return { baseName, audioPath:voicePath, timestampPath:path.join(parent, timestampEntry.name), imageFolder:null, outputDirectory:parent, images:[] };
 }
 async function describeIncompleteEpisode(audioPath, error) {
   const voicePath = path.resolve(String(audioPath || "").trim()), parent = path.dirname(voicePath), baseName = path.basename(voicePath, path.extname(voicePath));
@@ -754,7 +756,7 @@ app.post("/api/pick-episodes", async (_req, res) => {
     if (!output) return res.json({ ok: true, bundles: [] });
     const selected = JSON.parse(output), audioPaths = Array.isArray(selected) ? selected : [selected], bundles = [], errors = [];
     for (const audioPath of audioPaths) {
-      try { bundles.push(await discoverEpisodeBundle(audioPath)); }
+      try { bundles.push(await describeEpisodeVoice(audioPath)); }
       catch (error) {
         try { bundles.push(await describeIncompleteEpisode(audioPath, error)); }
         catch (descriptionError) { errors.push({ audioPath, error:descriptionError instanceof Error ? descriptionError.message : String(descriptionError) }); }
@@ -763,6 +765,18 @@ app.post("/api/pick-episodes", async (_req, res) => {
     res.json({ ok: true, bundles, errors });
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : "Không thể chọn bộ tập tự động." });
+  }
+});
+app.post("/api/pick-episode-images", async (_req, res) => {
+  try {
+    const script = "Add-Type -AssemblyName System.Windows.Forms; $owner=New-Object System.Windows.Forms.Form; $owner.TopMost=$true; $owner.ShowInTaskbar=$false; $owner.Opacity=0; $owner.Width=1; $owner.Height=1; $owner.StartPosition='CenterScreen'; $owner.Show(); $owner.Activate(); $dialog=New-Object System.Windows.Forms.FolderBrowserDialog; $dialog.Description='Chọn thư mục ảnh cho tập đang chọn'; $dialog.ShowNewFolderButton=$false; $result=$dialog.ShowDialog($owner); $owner.Close(); if($result -eq [System.Windows.Forms.DialogResult]::OK){[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output $dialog.SelectedPath}";
+    const folder = await runCapture("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", script]);
+    if (!folder) return res.json({ ok:true, folder:null, images:[] });
+    const imageFolder = path.resolve(folder), imageEntries = await episodeImagesIn(imageFolder);
+    if (!imageEntries.length) return res.status(400).json({ error:"Thư mục đã chọn không có ảnh JPG, PNG, WEBP hoặc BMP." });
+    res.json({ ok:true, folder:imageFolder, images:imageEntries.map((entry) => ({ name:entry.name })) });
+  } catch (error) {
+    res.status(400).json({ error:error instanceof Error ? error.message : "Không thể chọn thư mục ảnh." });
   }
 });
 app.post("/api/media-folders", async (req, res) => {
@@ -1356,7 +1370,7 @@ const jobUpload = upload.fields([{ name: "voice", maxCount: 1 }, { name: "subtit
 app.post("/api/jobs/from-episode", upload.single("music"), async (req, res) => {
   const id = crypto.randomUUID(), dir = path.join(persistentRoot, id), inputs = path.join(dir, "inputs");
   try {
-    const bundle = await discoverEpisodeBundle(req.body?.audioPath);
+    const bundle = await discoverEpisodeBundle(req.body?.audioPath, req.body?.imageFolder);
     await mkdir(inputs, { recursive: true });
     const copyRecord = async (source, field, originalName = path.basename(source)) => {
       const info = await stat(source), destination = path.join(inputs, `${field}-${crypto.randomUUID()}${path.extname(source)}`);

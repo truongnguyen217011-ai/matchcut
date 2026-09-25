@@ -753,14 +753,25 @@ function renderCurrentJobProgress() {
 }
 function renderBatchList() {
   const list = $("#batchList");
-  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<label class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""} ${item.error ? "disabled" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.imageCount} ảnh theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.outputDirectory && !item.output?.savedPath ? `<small class="job-output">MP4 → ${safeHtml(item.outputDirectory)}</small>` : ""}${item.imageFolder ? `<small class="job-output">Ảnh → ${safeHtml(item.imageFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button><em>${safeHtml(item.status)}</em></label>`).join("") : '<div class="batch-empty">Chọn một hoặc nhiều voice; mỗi tập sẽ tự nhận SRT và thư mục ảnh cùng tên.</div>';
+  list.innerHTML = batchFiles.length ? batchFiles.map((item,index) => `<div class="batch-row ${item.file === activeVoiceFile ? "active" : ""}"><input type="checkbox" data-batch-index="${index}" ${item.selected ? "checked" : ""} ${item.error || (item.localEpisode && !item.imageFolder) ? "disabled" : ""}><button type="button" class="batch-open" data-open-index="${index}" ${item.file ? "" : "disabled"}><strong>${safeHtml(item.file?.name || item.fileName || item.name)}</strong><span>${safeHtml(item.stage || item.status)} · ${Number(item.progress || 0)}% · ${item.localEpisode ? `${item.imageCount} ảnh theo thứ tự` : item.subtitleFile ? "timestamps sẵn" : "Whisper dự phòng"}</span>${item.outputDirectory && !item.output?.savedPath ? `<small class="job-output">MP4 → ${safeHtml(item.outputDirectory)}</small>` : ""}${item.imageFolder ? `<small class="job-output">Ảnh → ${safeHtml(item.imageFolder)}</small>` : ""}${batchTimingText(item) ? `<small class="job-timing">${safeHtml(batchTimingText(item))}</small>` : ""}${item.error ? `<small class="job-error">${safeHtml(item.error)}</small>` : ""}${item.output?.savedPath ? `<small class="job-output">${safeHtml(item.output.savedPath)}</small>` : ""}</button>${item.localEpisode && !item.jobId ? `<button type="button" class="pick-row-images" data-image-index="${index}">${item.imageFolder ? "Đổi ảnh" : "Chọn ảnh"}</button>` : ""}<em>${safeHtml(item.status)}</em></div>`).join("") : '<div class="batch-empty">Chọn voice để tự nhận SRT, sau đó chọn thư mục ảnh riêng cho từng tập.</div>';
   list.querySelectorAll("input").forEach((input) => input.onchange = () => { batchFiles[Number(input.dataset.batchIndex)].selected = input.checked; updateBatchButtons(); });
   list.querySelectorAll(".batch-open:not(:disabled)").forEach((button) => button.onclick = () => { setActiveVoice(batchFiles[Number(button.dataset.openIndex)].file); renderBatchList(); batchLog(`Đã đưa ${activeVoiceFile.name} lên trình biên tập.`); window.scrollTo({ top: 0, behavior: "smooth" }); });
+  list.querySelectorAll(".pick-row-images").forEach((button) => button.onclick = async () => {
+    const item = batchFiles[Number(button.dataset.imageIndex)]; button.disabled = true; button.textContent = "Đang chọn…";
+    try {
+      const response = await fetch("/api/pick-episode-images", { method:"POST" }), result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Không thể chọn thư mục ảnh.");
+      if (!result.folder) return;
+      item.imageFolder = result.folder; item.imageCount = result.images.length; item.error = null; item.selected = true; item.status = "Sẵn sàng"; item.stage = "Đã nhận voice + SRT + thư mục ảnh";
+      batchLog(`✓ ${item.fileName}: đã chọn ${item.imageCount} ảnh từ ${item.imageFolder}; MP4 sẽ lưu tại ${item.outputDirectory}.`);
+    } catch (error) { item.selected = false; item.status = "Chưa có ảnh"; item.stage = "Voice + SRT đã sẵn sàng"; item.error = error.message; batchLog(`✕ ${item.fileName}: ${error.message}`); }
+    finally { renderBatchList(); }
+  });
   updateBatchButtons(); renderCurrentJobProgress();
 }
 function isRunnableBatchItem(item) { return Boolean(item && !item.error && item.serverStatus !== "completed" && item.status !== "Hoàn tất" && (item.jobId || (item.localEpisode && item.timestampPath && item.imageCount > 0) || (item.file && assets.length))); }
 function updateBatchButtons() { const selected = batchFiles.filter((item) => item.selected), canRun = selected.some(isRunnableBatchItem), backendBusy = batchFiles.some((item) => ["queued", "transcribing", "rendering"].includes(item.serverStatus)); $("#batchCounter").textContent = `${batchFiles.filter((item) => item.status === "Hoàn tất" || item.serverStatus === "completed").length}/${selected.length}`; $("#runSingle").disabled = batchRunning || backendBusy || !canRun; $("#runBatch").disabled = batchRunning || backendBusy || !canRun; $("#stopBatch").disabled = !batchRunning; }
-$("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = true); renderBatchList(); };
+$("#selectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = !item.error && (!item.localEpisode || Boolean(item.imageFolder))); renderBatchList(); };
 $("#unselectAllBatch").onclick = () => { batchFiles.forEach((item) => item.selected = false); renderBatchList(); };
 $("#pickEpisodes").onclick = async () => {
   const button = $("#pickEpisodes"); button.disabled = true; button.textContent = "Đang tìm bộ video…";
@@ -772,8 +783,8 @@ $("#pickEpisodes").onclick = async () => {
       if (existingIndex >= 0 && !batchFiles[existingIndex].error) continue;
       if (existingIndex >= 0) batchFiles.splice(existingIndex, 1);
       const discoveryError = bundle.discoveryError || null;
-      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, imageFolder:bundle.imageFolder, outputDirectory:bundle.outputDirectory, imageCount:bundle.images.length, selected:!discoveryError, status:discoveryError ? "Thiếu tư liệu" : "Sẵn sàng", stage:discoveryError ? "Đã nhận voice · chưa thể chạy" : "Sẽ xuất MP4 cạnh voice + SRT", error:discoveryError, progress:0 });
-      batchLog(discoveryError ? `! Đã thêm voice ${bundle.baseName}: ${discoveryError}` : `✓ ${bundle.baseName}: đã tìm ${bundle.images.length} ảnh; MP4 sẽ lưu tại ${bundle.outputDirectory}.`);
+      batchFiles.push({ localEpisode:true, audioPath:bundle.audioPath, fileName:`${bundle.baseName}${bundle.audioPath.slice(bundle.audioPath.lastIndexOf("."))}`, timestampPath:bundle.timestampPath, imageFolder:null, outputDirectory:bundle.outputDirectory, imageCount:0, selected:false, status:discoveryError ? "Thiếu SRT" : "Chọn ảnh", stage:discoveryError ? "Voice đã nhận · thiếu SRT" : "Đã nhận voice + SRT · hãy chọn thư mục ảnh", error:discoveryError, progress:0 });
+      batchLog(discoveryError ? `! Đã thêm voice ${bundle.baseName}: ${discoveryError}` : `✓ ${bundle.baseName}: đã nhận voice + SRT; hãy bấm Chọn ảnh cho tập này. MP4 sẽ lưu tại ${bundle.outputDirectory}.`);
     }
     for (const failure of result.errors || []) batchLog(`✕ ${failure.audioPath}: ${failure.error}`);
     renderBatchList();
@@ -800,7 +811,7 @@ async function processBatchItem(item) {
   if (!item.jobId) {
     item.status = "Đang lưu project"; item.stage = "Tải dữ liệu vào máy chủ"; item.progress = 1; renderBatchList();
     if (item.localEpisode) {
-      const episodeForm = new FormData(); episodeForm.append("audioPath", item.audioPath); episodeForm.append("settings", JSON.stringify(effectSettings())); episodeForm.append("profileId", activeProfile); episodeForm.append("startedAt", item.startedAt || new Date().toISOString());
+      const episodeForm = new FormData(); episodeForm.append("audioPath", item.audioPath); episodeForm.append("imageFolder", item.imageFolder); episodeForm.append("settings", JSON.stringify(effectSettings())); episodeForm.append("profileId", activeProfile); episodeForm.append("startedAt", item.startedAt || new Date().toISOString());
       const music = $("#musicInput").files[0]; if (music) episodeForm.append("music", music);
       const response = await fetchWithRetry("/api/jobs/from-episode", { method:"POST", body:episodeForm }, `lưu bộ tập ${item.fileName}`), job = await response.json();
       if (!response.ok) throw new Error(job.error || "Không lưu được bộ tập");

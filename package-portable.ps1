@@ -26,13 +26,19 @@ try {
     else { New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null; Copy-Item -LiteralPath $_.FullName -Destination $target }
   }
   $stagedModules = Join-Path $stage "node_modules"
+  $bundledFfmpeg = Join-Path $projectRoot "node_modules\ffmpeg-static\ffmpeg.exe"
+  $stagedFfmpeg = Join-Path $stagedModules "ffmpeg-static\ffmpeg.exe"
   Get-ChildItem -LiteralPath $stagedModules -Recurse -File -Include "*.map", "README*", "CHANGELOG*", "HISTORY*" -ErrorAction SilentlyContinue | Remove-Item -Force
+  if (-not (Test-Path -LiteralPath $stagedFfmpeg)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $stagedFfmpeg) | Out-Null
+    Copy-Item -LiteralPath $bundledFfmpeg -Destination $stagedFfmpeg -Force
+  }
   $runtime = Join-Path $stage "runtime"
   New-Item -ItemType Directory -Force -Path $runtime | Out-Null
   Copy-Item -LiteralPath $nodeRuntimeExe -Destination (Join-Path $runtime "node.exe") -Force
   $nodeLicense = Join-Path (Split-Path $nodeRuntimeExe) "LICENSE"
   if (Test-Path -LiteralPath $nodeLicense) { Copy-Item -LiteralPath $nodeLicense -Destination (Join-Path $runtime "NODE-LICENSE.txt") -Force }
-  if (-not (Test-Path -LiteralPath (Join-Path $stage "node_modules\ffmpeg-static\ffmpeg.exe"))) { throw "Goi thieu FFmpeg runtime." }
+  if (-not (Test-Path -LiteralPath $stagedFfmpeg)) { throw "Goi thieu FFmpeg runtime." }
   if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
   Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
   Write-Host "Da tao ban one-click tu chua Node, dependencies va FFmpeg: $zip" -ForegroundColor Green
